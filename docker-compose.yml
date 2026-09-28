@@ -1,0 +1,21 @@
+services:
+  ms-tracker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ms-tracker:latest
+    container_name: ms-tracker
+    restart: unless-stopped
+    ports:
+      - "${HOST_PORT:-8081}:8080"
+    env_file:
+      - .env
+    volumes:
+      - ./service-account.json:/app/service-account.json:ro
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8080/healthz')\" || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
