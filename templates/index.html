@@ -4,17 +4,18 @@
 <head>
     <base target="_top">
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>XL Smart MS Support Activity Tracker</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <title>MS Support Activity Tracker</title>
 
-    <!-- PWA & Favicon Assets with XL Smart Logo -->
+    <!-- PWA & Favicon Assets -->
     <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon.png">
     <link rel="icon" type="image/x-icon" href="/favicon.ico">
     <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
     <link rel="manifest" href="/manifest.json">
-    <meta name="theme-color" content="#2434a4">
+    <meta name="theme-color" content="#2434a4" id="metaThemeColor">
+    <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="MS Tracker">
     <meta name="application-name" content="MS Tracker">
 
@@ -25,6 +26,12 @@
 
     <style>
         :root {
+            /* Safe area insets for mobile & notched displays */
+            --sat: env(safe-area-inset-top, 0px);
+            --sab: env(safe-area-inset-bottom, 0px);
+            --sal: env(safe-area-inset-left, 0px);
+            --sar: env(safe-area-inset-right, 0px);
+
             /* Light Mode Palette */
             --primary: #2434a4;
             --primary-hover: #1a2780;
@@ -61,6 +68,12 @@
 
         * {
             box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        html, body {
+            overflow-x: hidden;
+            width: 100%;
         }
 
         body {
@@ -71,6 +84,7 @@
             padding: 32px 16px;
             line-height: 1.5;
             transition: background-color 0.3s ease, color 0.3s ease;
+            -webkit-font-smoothing: antialiased;
         }
 
         .container {
@@ -1618,50 +1632,808 @@
             }
         }
 
+        /* ========================================================
+           MOBILE & PWA NATIVE APP ENHANCEMENTS
+           ======================================================== */
+        
+        /* Mobile Bottom Navigation Dock (App Bar) - Hidden on desktop */
+        .mobile-bottom-nav {
+            display: none;
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            z-index: 999;
+            background: var(--card);
+            border-top: 1px solid var(--border);
+            padding: 6px 10px calc(8px + var(--sab)) 10px;
+            box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.08);
+            justify-content: space-around;
+            align-items: center;
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+        }
+
+        .mobile-nav-item {
+            background: transparent;
+            border: none;
+            color: var(--muted);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 4px 8px;
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+            border-radius: 12px;
+            min-width: 58px;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            user-select: none;
+            gap: 2px;
+        }
+
+        .mobile-nav-item:active {
+            transform: scale(0.92);
+        }
+
+        .mobile-nav-item.active {
+            color: var(--primary);
+        }
+
+        .mobile-nav-icon {
+            font-size: 19px;
+            line-height: 1.1;
+            transition: transform 0.2s ease;
+        }
+
+        .mobile-nav-item.active .mobile-nav-icon {
+            transform: translateY(-2px);
+        }
+
+        .mobile-nav-label {
+            letter-spacing: -0.01em;
+            line-height: 1;
+        }
+
+        /* Center Elevated Floating Action Button (FAB) */
+        .mobile-nav-fab-wrap {
+            position: relative;
+            top: -14px;
+            flex: 0 0 54px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .mobile-fab-btn {
+            width: 52px;
+            height: 52px;
+            border-radius: 50%;
+            background: var(--gradient);
+            border: 3px solid var(--card);
+            box-shadow: 0 6px 20px rgba(255, 45, 143, 0.5);
+            color: #ffffff;
+            font-size: 26px;
+            font-weight: 300;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+            line-height: 1;
+        }
+
+        .mobile-fab-btn:active {
+            transform: scale(0.9);
+            box-shadow: 0 2px 10px rgba(255, 45, 143, 0.6);
+        }
+
+        /* Mobile Feed Container - Hidden on Desktop */
+        .mobile-cards-feed {
+            display: none;
+        }
+
+        /* Mobile Activity Card Component */
+        .mcard {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 18px;
+            padding: 15px 16px;
+            margin-bottom: 12px;
+            box-shadow: var(--shadow-sm);
+            transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .mcard::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 4px;
+            background: #94a3b8;
+            border-radius: 4px 0 0 4px;
+        }
+
+        .mcard.status-in-progress::before {
+            background: #f59e0b;
+        }
+
+        .mcard.status-closed::before {
+            background: #10b981;
+        }
+
+        .mcard-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        .mcard-customer-info {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .mcard-customer-badge {
+            font-size: 13px;
+            font-weight: 800;
+            color: var(--primary);
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            background: rgba(36, 52, 164, 0.08);
+            padding: 3px 9px;
+            border-radius: 8px;
+            transition: background 0.15s;
+        }
+
+        [data-theme="dark"] .mcard-customer-badge {
+            background: rgba(99, 102, 241, 0.18);
+        }
+
+        .mcard-date-badge {
+            font-size: 11.5px;
+            color: var(--muted);
+            font-weight: 600;
+        }
+
+        .mcard-top-right {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .mcard-duration-badge {
+            font-size: 11.5px;
+            font-weight: 700;
+            color: var(--accent);
+            background: rgba(255, 45, 143, 0.09);
+            padding: 3px 8px;
+            border-radius: 999px;
+            white-space: nowrap;
+        }
+
+        .mcard-status-select {
+            font-size: 11px;
+            font-weight: 800;
+            padding: 4px 8px;
+            border-radius: 999px;
+            border: 1px solid var(--border);
+            cursor: pointer;
+            appearance: none;
+            -webkit-appearance: none;
+            text-align: center;
+        }
+
+        .mcard-task-desc {
+            font-size: 13.5px;
+            line-height: 1.45;
+            color: var(--text);
+            font-weight: 500;
+            margin: 6px 0 10px 0;
+            word-break: break-word;
+            cursor: pointer;
+        }
+
+        .mcard-tags {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin-bottom: 10px;
+        }
+
+        .mcard-tag {
+            font-size: 11px;
+            padding: 2.5px 7px;
+            border-radius: 6px;
+            background: var(--input-bg);
+            border: 1px solid var(--border);
+            color: var(--muted);
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 3px;
+        }
+
+        .mcard-details-panel {
+            background: var(--input-bg);
+            border: 1px dashed var(--border);
+            border-radius: 12px;
+            padding: 12px;
+            margin: 10px 0;
+            font-size: 12px;
+            animation: fadeInDetail 0.2s ease;
+        }
+
+        @keyframes fadeInDetail {
+            from { opacity: 0; transform: translateY(-4px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .mcard-detail-item {
+            margin-bottom: 6px;
+            line-height: 1.4;
+            color: var(--text);
+        }
+
+        .mcard-detail-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .mcard-detail-item strong {
+            color: var(--muted);
+            font-size: 11px;
+            display: inline-block;
+            margin-right: 4px;
+        }
+
+        .mcard-detail-item.msig-note {
+            background: rgba(59, 130, 246, 0.08);
+            border-left: 3px solid #3b82f6;
+            padding: 6px 8px;
+            border-radius: 6px;
+            margin-top: 6px;
+        }
+
+        .mcard-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-top: 1px solid var(--border);
+            padding-top: 10px;
+            margin-top: 4px;
+            gap: 8px;
+        }
+
+        .mcard-expand-btn {
+            background: transparent;
+            border: none;
+            color: var(--primary);
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            padding: 4px 6px;
+            border-radius: 6px;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .mcard-action-btns {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .mcard-btn-action {
+            background: var(--input-bg);
+            border: 1px solid var(--border);
+            color: var(--text);
+            font-size: 11px;
+            font-weight: 700;
+            padding: 5px 10px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .mcard-btn-action:active {
+            transform: scale(0.93);
+        }
+
+        .mcard-btn-action.delete {
+            color: #ef4444;
+        }
+
+        .mcard-empty {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--muted);
+            font-size: 14px;
+            font-weight: 600;
+            background: var(--card);
+            border-radius: 16px;
+            border: 1px dashed var(--border);
+        }
+
+        /* Mobile Search & Controls (Hidden on Desktop) */
+        .mobile-search-bar {
+            display: none;
+            position: relative;
+            margin-bottom: 12px;
+            width: 100%;
+        }
+
+        .mobile-search-bar input {
+            width: 100%;
+            padding: 12px 38px 12px 38px;
+            border-radius: 999px;
+            border: 1.5px solid var(--border);
+            background: var(--card);
+            color: var(--text);
+            font-size: 14px;
+            font-weight: 500;
+            box-shadow: var(--shadow-sm);
+            outline: none;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        .mobile-search-bar input:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(36, 52, 164, 0.12);
+        }
+
+        .mobile-search-bar .msearch-icon {
+            position: absolute;
+            left: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 14px;
+            color: var(--muted);
+            pointer-events: none;
+        }
+
+        .mobile-search-bar .msearch-clear {
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: var(--border);
+            border: none;
+            color: var(--text);
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            cursor: pointer;
+        }
+
+        .mobile-filter-toggle-btn {
+            display: none;
+            width: 100%;
+            justify-content: space-between;
+            align-items: center;
+            background: var(--card);
+            border: 1px solid var(--border);
+            padding: 11px 16px;
+            border-radius: 12px;
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--text);
+            cursor: pointer;
+            box-shadow: var(--shadow-sm);
+            margin-bottom: 12px;
+        }
+
+        .mobile-filter-active-count {
+            background: var(--primary);
+            color: #ffffff;
+            font-size: 10px;
+            padding: 2px 6px;
+            border-radius: 999px;
+            margin-left: 6px;
+        }
+
+        .mobile-view-toggle {
+            display: none;
+            background: var(--input-bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 2px;
+            gap: 2px;
+        }
+
+        .mview-btn {
+            background: transparent;
+            border: none;
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--muted);
+            padding: 4px 8px;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        .mview-btn.active {
+            background: var(--card);
+            color: var(--primary);
+            box-shadow: var(--shadow-sm);
+        }
+
+        /* Modal drag handle bar for native bottom sheet feel */
+        .modal-drag-handle {
+            display: none;
+            width: 44px;
+            height: 5px;
+            background: var(--border);
+            border-radius: 99px;
+            margin: -6px auto 14px auto;
+        }
+
+        @keyframes slideUpSheet {
+            from { transform: translateY(100%); }
+            to { transform: translateY(0); }
+        }
+
+        /* ========================================================
+           RESPONSIVE MOBILE BREAKPOINTS (max-width: 768px)
+           ======================================================== */
         @media (max-width: 768px) {
             body {
-                padding: 16px 10px;
+                padding: 0 0 calc(78px + var(--sab)) 0;
             }
 
+            .container {
+                padding: 12px 14px;
+                max-width: 100%;
+            }
+
+            /* Sticky Sleek Native App Bar */
+            .header {
+                position: sticky;
+                top: 0;
+                z-index: 850;
+                margin: 0 0 12px 0;
+                padding: calc(8px + var(--sat)) 14px 10px 14px;
+                border-radius: 0 0 18px 18px;
+                flex-direction: row;
+                align-items: center;
+                justify-content: space-between;
+                backdrop-filter: blur(20px);
+                -webkit-backdrop-filter: blur(20px);
+                background: rgba(255, 255, 255, 0.92);
+                border-top: none;
+                border-left: none;
+                border-right: none;
+                box-shadow: 0 4px 16px rgba(0, 0, 0, 0.05);
+            }
+
+            [data-theme="dark"] .header {
+                background: rgba(30, 41, 59, 0.92);
+                box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+            }
+
+            .header-left {
+                gap: 10px;
+            }
+
+            .logo {
+                height: 34px;
+            }
+
+            .title {
+                font-size: 16px;
+                font-weight: 800;
+                line-height: 1.2;
+            }
+
+            .subtitle {
+                display: none; /* Hide lengthy subtitle on mobile for sleek app feel */
+            }
+
+            /* In top bar, hide big buttons in favor of bottom dock */
+            .header-controls {
+                gap: 8px;
+            }
+
+            .btn-client-report,
+            .btn-add-activity {
+                display: none !important;
+            }
+
+            .theme-toggle {
+                padding: 8px 10px;
+                font-size: 11px;
+                border-radius: 999px;
+            }
+
+            /* Show Bottom Navigation Dock on mobile */
+            .mobile-bottom-nav {
+                display: flex;
+            }
+
+            /* Segmented Nav Tabs */
+            .nav-tabs {
+                display: flex;
+                background: var(--input-bg);
+                padding: 4px;
+                border-radius: 12px;
+                border: 1px solid var(--border);
+                margin-bottom: 14px;
+                gap: 4px;
+            }
+
+            .nav-tab {
+                flex: 1;
+                text-align: center;
+                padding: 10px 8px;
+                font-size: 12.5px;
+                font-weight: 700;
+                border-radius: 9px;
+                border: none;
+                background: transparent;
+                color: var(--muted);
+                transition: all 0.2s ease;
+            }
+
+            .nav-tab.active {
+                background: var(--card);
+                color: var(--primary);
+                box-shadow: var(--shadow-sm);
+                border: 1px solid var(--border);
+            }
+
+            /* Mobile Search & Filter toggle */
+            .mobile-search-bar {
+                display: block;
+            }
+
+            .mobile-filter-toggle-btn {
+                display: flex;
+            }
+
+            .mobile-view-toggle {
+                display: flex;
+            }
+
+            .preset-container {
+                overflow-x: auto;
+                white-space: nowrap;
+                padding-bottom: 6px;
+                margin-bottom: 10px;
+                display: flex;
+                gap: 6px;
+                scrollbar-width: none;
+                -webkit-overflow-scrolling: touch;
+            }
+
+            .preset-container::-webkit-scrollbar {
+                display: none;
+            }
+
+            .preset-label {
+                display: none;
+            }
+
+            .preset-btn {
+                padding: 6px 12px;
+                font-size: 11.5px;
+                white-space: nowrap;
+                flex-shrink: 0;
+            }
+
+            /* Collapsible Filter Bar on Mobile */
+            .filter-bar {
+                display: none;
+                grid-template-columns: 1fr;
+                gap: 10px;
+                background: var(--input-bg);
+                padding: 14px;
+                border-radius: 14px;
+                border: 1px solid var(--border);
+                margin-bottom: 14px;
+            }
+
+            .filter-bar.mobile-expanded {
+                display: grid;
+                animation: fadeInDetail 0.25s ease;
+            }
+
+            .filter-bar label {
+                font-size: 11.5px;
+            }
+
+            .filter-bar input,
+            .filter-bar select {
+                font-size: 16px !important; /* Prevents auto zoom on iOS Safari */
+                padding: 10px 12px;
+            }
+
+            /* Grids */
             .grid,
             .dashboard-grid {
                 grid-template-columns: 1fr;
+                gap: 12px;
             }
 
-            .filter-bar {
-                grid-template-columns: 1fr;
-            }
-
+            /* Stats Cards Mobile App 2x2 Grid */
             .stats-container {
                 grid-template-columns: repeat(2, 1fr);
+                gap: 10px;
+                margin-bottom: 16px;
             }
 
-            .detail-box {
-                grid-template-columns: 1fr;
+            .stat-card {
+                padding: 14px 14px;
+                border-radius: 16px;
             }
 
-            .pagination-bar {
-                flex-direction: column;
-                align-items: flex-start;
+            .stat-label {
+                font-size: 11px;
+                font-weight: 700;
             }
 
-            .header {
-                flex-direction: column;
-                align-items: flex-start;
+            .stat-value {
+                font-size: 22px;
+                margin-top: 4px;
             }
 
-            .header-controls {
-                width: 100%;
-                justify-content: space-between;
-            }
-
-            .dashboard-filter-card {
-                flex-direction: column;
-                align-items: flex-start;
+            /* MSIG Quota Mobile Card */
+            .msig-quota-card {
+                padding: 14px 14px;
+                border-radius: 16px;
+                margin-bottom: 16px;
             }
 
             .msig-chips-grid {
                 grid-template-columns: repeat(2, 1fr);
+                gap: 8px;
+            }
+
+            .msig-chip {
+                padding: 8px 10px;
+                border-radius: 10px;
+            }
+
+            /* Dashboard Date Controls */
+            .dashboard-filter-card {
+                flex-direction: column;
+                align-items: stretch;
+                padding: 14px;
+                gap: 12px;
+                border-radius: 16px;
+            }
+
+            .dash-filter-inputs {
+                flex-wrap: wrap;
+                gap: 8px;
+                width: 100%;
+            }
+
+            .dash-filter-inputs input[type="date"] {
+                flex: 1;
+                font-size: 14px;
+            }
+
+            .dash-btn-group {
+                display: flex;
+                overflow-x: auto;
+                white-space: nowrap;
+                padding-bottom: 4px;
+                gap: 6px;
+                width: 100%;
+                scrollbar-width: none;
+                -webkit-overflow-scrolling: touch;
+            }
+
+            .dash-btn-group::-webkit-scrollbar {
+                display: none;
+            }
+
+            .dash-btn-group button {
+                flex-shrink: 0;
+                font-size: 12px;
+                padding: 8px 12px !important;
+            }
+
+            /* Table vs Mobile Cards */
+            .mobile-cards-feed {
+                display: block;
+            }
+
+            .table-responsive {
+                display: none; /* By default show cards on mobile */
+            }
+
+            .table-responsive.force-show {
+                display: block !important;
+            }
+
+            .mobile-cards-feed.force-hide {
+                display: none !important;
+            }
+
+            .pagination-bar {
+                flex-direction: column;
+                align-items: center;
+                gap: 10px;
+                padding: 14px 0;
+            }
+
+            .pagination-controls {
+                width: 100%;
+                justify-content: space-between;
+            }
+
+            /* Native Bottom Sheet Modals */
+            .modal-overlay {
+                padding: 0;
+                align-items: flex-end;
+                backdrop-filter: blur(10px);
+                -webkit-backdrop-filter: blur(10px);
+            }
+
+            .modal-box {
+                border-radius: 26px 26px 0 0;
+                max-width: 100%;
+                width: 100%;
+                max-height: 88vh;
+                padding: 14px 18px calc(24px + var(--sab)) 18px;
+                border-bottom: none;
+                border-left: none;
+                border-right: none;
+                animation: slideUpSheet 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+            }
+
+            .modal-drag-handle {
+                display: block;
+            }
+
+            .modal-header {
+                margin-bottom: 14px;
+            }
+
+            .modal-title {
+                font-size: 17px;
+            }
+
+            /* Prevent iOS auto zoom in modal inputs */
+            .modal-box input,
+            .modal-box select,
+            .modal-box textarea {
+                font-size: 16px !important;
+            }
+
+            .modal-box .actions {
+                position: sticky;
+                bottom: 0;
+                background: var(--card);
+                padding-top: 12px;
+                margin-top: 16px;
+                border-top: 1px solid var(--border);
+                z-index: 10;
+            }
+
+            /* Full Screen Customer Dossier on Mobile */
+            .customer-dossier-drawer {
+                width: 100vw;
+                max-width: 100vw;
+                height: 100vh;
+                border-radius: 0;
+                padding-top: var(--sat);
+                padding-bottom: calc(60px + var(--sab));
             }
         }
 
@@ -1934,6 +2706,13 @@
         <div id="reportTab" class="tab-content">
             <div class="card">
 
+                <!-- MOBILE SEARCH BAR (Prominent on Mobile) -->
+                <div class="mobile-search-bar">
+                    <span class="msearch-icon">🔍</span>
+                    <input type="text" id="mobileSearchInput" placeholder="Cari aktivitas atau task..." oninput="syncMobileSearch(this.value)" />
+                    <button type="button" class="msearch-clear" id="btnMobileSearchClear" onclick="clearMobileSearch()" style="display: none;">✕</button>
+                </div>
+
                 <!-- QUICK FILTER PRESETS -->
                 <div class="preset-container">
                     <span class="preset-label">Quick Presets:</span>
@@ -1941,6 +2720,12 @@
                     <button class="preset-btn" onclick="applyPreset('pending', this)">📌 Pending Tasks</button>
                     <button class="preset-btn" onclick="applyPreset('thisMonth', this)">📅 This Month</button>
                     <button class="preset-btn" onclick="applyPreset('reset', this)">🔄 Reset All</button>
+
+                    <!-- MOBILE VIEW MODE TOGGLE (Cards vs Table) -->
+                    <div class="mobile-view-toggle">
+                        <button type="button" class="mview-btn active" id="mviewCardBtn" onclick="setMobileViewMode('cards')">📋 Kartu</button>
+                        <button type="button" class="mview-btn" id="mviewTableBtn" onclick="setMobileViewMode('table')">⊞ Tabel</button>
+                    </div>
 
                     <div style="position: relative; display: inline-block;">
                         <button class="preset-btn" id="btnColumnVisibility" onclick="toggleColumnVisibilityMenu(event)" title="Kustomisasi kolom tabel yang ditampilkan">
@@ -1973,8 +2758,18 @@
                     </button>
                 </div>
 
+                <!-- MOBILE FILTER ACCORDION TOGGLE -->
+                <button type="button" class="mobile-filter-toggle-btn" id="btnToggleMobileFilter" onclick="toggleMobileFilters()">
+                    <span style="display: flex; align-items: center; gap: 8px;">
+                        <span>⚙️</span>
+                        <span>Filter & Pengurutan</span>
+                        <span class="mobile-filter-active-count" id="mobileFilterCount" style="display: none;">0</span>
+                    </span>
+                    <span id="mobileFilterToggleIcon">▾</span>
+                </button>
+
                 <!-- ADVANCED FILTER BAR -->
-                <div class="filter-bar">
+                <div class="filter-bar" id="filterBarContainer">
                     <div>
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
                             <label style="margin: 0;">Filter Customer</label>
@@ -2035,6 +2830,9 @@
                     Loading report data...
                 </div>
 
+                <!-- MOBILE ACTIVITY CARDS FEED (Default on Mobile) -->
+                <div id="reportMobileCards" class="mobile-cards-feed"></div>
+
                 <!-- TABLE REPORT -->
                 <div class="table-responsive">
                     <table>
@@ -2079,6 +2877,7 @@
     <!-- MODAL POP-UP 1: ADD NEW ACTIVITY -->
     <div id="addModal" class="modal-overlay">
         <div class="modal-box">
+            <div class="modal-drag-handle"></div>
             <div class="modal-header">
                 <div class="modal-title">New Activity Log</div>
                 <button class="btn-secondary" style="padding: 4px 10px;" onclick="closeAddModal()">✕</button>
@@ -2251,6 +3050,7 @@
     <!-- MODAL POP-UP 2: EDIT RECORD -->
     <div id="editModal" class="modal-overlay">
         <div class="modal-box">
+            <div class="modal-drag-handle"></div>
             <div class="modal-header">
                 <div class="modal-title">Edit Activity Record</div>
                 <button class="btn-secondary" style="padding: 4px 10px;" onclick="closeEditModal()">✕</button>
@@ -2365,6 +3165,7 @@
     <!-- MODAL POP-UP 3: GEMINI AI EXECUTIVE SUMMARY -->
     <div id="aiSummaryModal" class="modal-overlay">
         <div class="modal-box" style="max-width: 860px; max-height: 90vh;">
+            <div class="modal-drag-handle"></div>
             <div class="modal-header">
                 <div>
                     <div class="modal-title" style="display: flex; align-items: center; gap: 8px;">
@@ -2429,6 +3230,7 @@
     <!-- MODAL POP-UP 4: CLIENT-FACING SLA & MONTHLY REPORT -->
     <div id="clientReportModal" class="modal-overlay">
         <div class="modal-box" style="max-width: 680px;">
+            <div class="modal-drag-handle"></div>
             <div class="modal-header">
                 <div>
                     <div class="modal-title" style="display: flex; align-items: center; gap: 8px;">
@@ -2640,6 +3442,9 @@
             document.getElementById('themeText').innerText = isDark ? 'Dark' : 'Light';
 
             document.getElementById('appLogo').src = isDark ? LOGO_LIGHT : LOGO_DARK;
+
+            const metaTheme = document.getElementById('metaThemeColor');
+            if (metaTheme) metaTheme.setAttribute('content', newTheme === 'dark' ? '#0f172a' : '#2434a4');
 
             if (document.getElementById('dashboardTab').classList.contains('active')) {
                 updateDashboardAnalytics();
@@ -3764,13 +4569,26 @@
         function switchTab(tabId, el) {
             document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
             document.querySelectorAll('.nav-tab').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.mobile-nav-item').forEach(btn => btn.classList.remove('active'));
 
-            document.getElementById(tabId).classList.add('active');
-            el.classList.add('active');
+            const targetTab = document.getElementById(tabId);
+            if (targetTab) targetTab.classList.add('active');
 
             if (tabId === 'dashboardTab') {
+                const dt = document.querySelector('.nav-tab[onclick*="dashboardTab"]');
+                if (dt) dt.classList.add('active');
+                const mt = document.getElementById('mobileNavDashboard');
+                if (mt) mt.classList.add('active');
                 updateDashboardAnalytics();
+            } else if (tabId === 'reportTab') {
+                const rt = document.querySelector('.nav-tab[onclick*="reportTab"]');
+                if (rt) rt.classList.add('active');
+                const mt = document.getElementById('mobileNavReport');
+                if (mt) mt.classList.add('active');
             }
+
+            // Scroll to top smoothly on tab switch
+            window.scrollTo({ top: 0, behavior: 'smooth' });
         }
 
         // Submit Form Activity
@@ -4682,15 +5500,20 @@
             applyColumnVisibilityStyles();
         }
 
-        // Render Table Content
+        // Render Table Content & Mobile Cards
         function renderReportTable() {
             const tbody = document.getElementById('reportTbody');
+            const mobileContainer = document.getElementById('reportMobileCards');
             tbody.innerHTML = '';
+            if (mobileContainer) mobileContainer.innerHTML = '';
 
             const totalItems = filteredLogs.length;
 
             if (totalItems === 0) {
                 tbody.innerHTML = `<tr><td colspan="${getVisibleColumnCount()}" style="text-align: center; color: var(--muted); padding: 24px;">No records found.</td></tr>`;
+                if (mobileContainer) {
+                    mobileContainer.innerHTML = `<div class="mcard-empty"><div style="font-size: 32px; margin-bottom: 8px;">🔍</div>Tidak ada catatan aktivitas yang sesuai filter.</div>`;
+                }
                 document.getElementById('paginationInfo').innerText = 'Showing 0 of 0 entries';
                 document.getElementById('pageIndicator').innerText = 'Page 1 of 1';
                 document.getElementById('prevBtn').disabled = true;
@@ -4708,7 +5531,9 @@
                 const formattedDate = formatDateFormatted(item.date);
                 const msigCalc = calculateMsigTicketBurn(item);
                 const msigBadge = msigCalc.isMsig ? `<div style="margin-top: 4px;">${msigCalc.badgeHtml}</div>` : '';
+                const isMsig = item.customer && item.customer.toUpperCase().includes('MSIG');
 
+                // 1. Desktop Table Row
                 const trMain = document.createElement('tr');
                 trMain.className = 'main-row';
                 trMain.onclick = (e) => {
@@ -4732,7 +5557,7 @@
           <td class="td-center col-services">${item.services || '-'}</td>
           <td class="td-center col-category">
             <div>${item.category || '-'}</div>
-            ${item.customer && item.customer.toUpperCase().includes('MSIG') ? `
+            ${isMsig ? `
               <select class="ticket-select burn-${(item.ticketDeduction || 0) == 0.5 ? '05' : ((item.ticketDeduction || 0) >= 1.0 ? '10' : '00')}"
                       title="Ubah Kuota Tiket Terpotong"
                       onclick="event.stopPropagation()"
@@ -4778,6 +5603,72 @@
 
                 tbody.appendChild(trMain);
                 tbody.appendChild(trDetail);
+
+                // 2. Mobile App Card
+                if (mobileContainer) {
+                    const card = document.createElement('div');
+                    card.className = `mcard ${statusClass}`;
+                    card.id = `mcard-${item.rowId}`;
+
+                    card.innerHTML = `
+                        <div class="mcard-top">
+                            <div class="mcard-customer-info">
+                                <span class="mcard-customer-badge" onclick="openCustomerDossier('${escapeJsString(item.customer)}'); event.stopPropagation();">
+                                    <strong>${escapeHtml(item.customer || '-')}</strong> <span class="dossier-mini-icon">🗂️</span>
+                                </span>
+                                <span class="mcard-date-badge">${formattedDate}</span>
+                            </div>
+                            <div class="mcard-top-right">
+                                <span class="mcard-duration-badge">⏱️ ${item.duration || '00:00'}</span>
+                                <select class="mcard-status-select ${statusClass}" onchange="changeStatus(${item.rowId}, this.value, this)">
+                                    <option value="In Progress" ${item.status === 'In Progress' ? 'selected' : ''}>In Progress</option>
+                                    <option value="Closed" ${item.status === 'Closed' ? 'selected' : ''}>Closed</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="mcard-task-desc" onclick="toggleMobileCardDetail(${item.rowId})">
+                            ${escapeHtml(item.taskDescription || '-')}
+                        </div>
+
+                        <div class="mcard-tags">
+                            <span class="mcard-tag">☁️ ${escapeHtml(item.services || '-')}</span>
+                            <span class="mcard-tag">🏷️ ${escapeHtml(item.category || '-')}</span>
+                            ${item.raisedBy ? `<span class="mcard-tag">👤 ${escapeHtml(item.raisedBy)}</span>` : ''}
+                            ${isMsig ? `
+                                <select class="ticket-select burn-${(item.ticketDeduction || 0) == 0.5 ? '05' : ((item.ticketDeduction || 0) >= 1.0 ? '10' : '00')}"
+                                        title="Ubah Kuota Tiket Terpotong"
+                                        onclick="event.stopPropagation()"
+                                        onchange="changeTicketDeduction(${item.rowId}, parseFloat(this.value), this)">
+                                    <option value="0" ${(item.ticketDeduction || 0) == 0 ? 'selected' : ''}>⚪ 0 Tkt</option>
+                                    <option value="0.5" ${(item.ticketDeduction || 0) == 0.5 ? 'selected' : ''}>🎫 0.5 Tkt</option>
+                                    <option value="1.0" ${(item.ticketDeduction || 0) >= 1.0 ? 'selected' : ''}>🎫 1.0 Tkt</option>
+                                </select>
+                            ` : ''}
+                        </div>
+
+                        <!-- Expandable Details Drawer -->
+                        <div class="mcard-details-panel" id="mcardDetail-${item.rowId}" style="display: none;">
+                            <div class="mcard-detail-item"><strong>📌 Project / GCP:</strong> ${escapeHtml(item.project || 'N/A')}</div>
+                            <div class="mcard-detail-item"><strong>⏰ Clock In/Out:</strong> ${item.clockIn || '-'} ➔ ${item.clockOut || '-'}</div>
+                            ${item.rootCause ? `<div class="mcard-detail-item"><strong>🔍 Root Cause:</strong> ${escapeHtml(item.rootCause)}</div>` : ''}
+                            ${item.solution ? `<div class="mcard-detail-item"><strong>💡 Solution:</strong> ${escapeHtml(item.solution)}</div>` : ''}
+                            ${item.remarks ? `<div class="mcard-detail-item"><strong>📝 Remarks:</strong> ${escapeHtml(item.remarks)}</div>` : ''}
+                            ${msigCalc.isMsig ? `<div class="mcard-detail-item msig-note"><strong>🎫 Kuota MSIG:</strong> ${msigCalc.ticketBurn.toFixed(1)} Ticket — ${msigCalc.explanation}</div>` : ''}
+                        </div>
+
+                        <div class="mcard-footer">
+                            <button type="button" class="mcard-expand-btn" onclick="toggleMobileCardDetail(${item.rowId})">
+                                <span id="mcardExpandIcon-${item.rowId}">Detail ▾</span>
+                            </button>
+                            <div class="mcard-action-btns">
+                                <button type="button" class="mcard-btn-action edit" onclick="openEditModal(${item.rowId})" title="Edit Log">✏️ Edit</button>
+                                <button type="button" class="mcard-btn-action delete" onclick="confirmDelete(${item.rowId})" title="Hapus Log">🗑️</button>
+                            </div>
+                        </div>
+                    `;
+                    mobileContainer.appendChild(card);
+                }
             });
 
             applyColumnVisibilityStyles();
@@ -4788,6 +5679,76 @@
 
             document.getElementById('prevBtn').disabled = currentPage === 1;
             document.getElementById('nextBtn').disabled = currentPage === maxPages;
+        }
+
+        // Toggle Mobile Activity Card Details
+        function toggleMobileCardDetail(rowId) {
+            const panel = document.getElementById(`mcardDetail-${rowId}`);
+            const icon = document.getElementById(`mcardExpandIcon-${rowId}`);
+            if (!panel) return;
+            if (panel.style.display === 'none' || !panel.style.display) {
+                panel.style.display = 'block';
+                if (icon) icon.innerText = 'Tutup ▴';
+            } else {
+                panel.style.display = 'none';
+                if (icon) icon.innerText = 'Detail ▾';
+            }
+        }
+
+        // Mobile Search Sync Functions
+        function syncMobileSearch(val) {
+            const searchInput = document.getElementById('searchKeyword');
+            const clearBtn = document.getElementById('btnMobileSearchClear');
+            if (searchInput) {
+                searchInput.value = val;
+                onManualFilterChange();
+            }
+            if (clearBtn) {
+                clearBtn.style.display = val ? 'flex' : 'none';
+            }
+        }
+
+        function clearMobileSearch() {
+            const mobInput = document.getElementById('mobileSearchInput');
+            const clearBtn = document.getElementById('btnMobileSearchClear');
+            if (mobInput) mobInput.value = '';
+            if (clearBtn) clearBtn.style.display = 'none';
+            syncMobileSearch('');
+        }
+
+        // Toggle Mobile Filter Accordion
+        function toggleMobileFilters() {
+            const bar = document.getElementById('filterBarContainer');
+            const icon = document.getElementById('mobileFilterToggleIcon');
+            if (!bar) return;
+            const isOpen = bar.classList.contains('mobile-expanded');
+            if (isOpen) {
+                bar.classList.remove('mobile-expanded');
+                if (icon) icon.innerText = '▾';
+            } else {
+                bar.classList.add('mobile-expanded');
+                if (icon) icon.innerText = '▴';
+            }
+        }
+
+        // Set Mobile View Mode (Cards vs Table)
+        function setMobileViewMode(mode) {
+            const tableEl = document.querySelector('.table-responsive');
+            const cardsEl = document.getElementById('reportMobileCards');
+            const cardBtn = document.getElementById('mviewCardBtn');
+            const tableBtn = document.getElementById('mviewTableBtn');
+
+            if (mode === 'table') {
+                if (tableEl) tableEl.classList.add('force-show');
+                if (cardsEl) cardsEl.classList.add('force-hide');
+                if (cardBtn) cardBtn.classList.remove('active');
+                if (tableBtn) tableBtn.classList.add('active');
+            } else {
+                if (tableEl) tableEl.classList.remove('force-show');
+                if (cardsEl) cardsEl.classList.remove('force-hide');
+                if (cardBtn) cardBtn.classList.add('active');
+                if (tableBtn) tableBtn.classList.remove('active');
+            }
         }
 
         function handleActionChange(rowId, actionValue, selectElement) {
@@ -5112,18 +6073,26 @@
                     const icon = document.getElementById('syncIcon');
                     const text = document.getElementById('syncText');
                     const wrapper = text ? text.parentElement : null;
+                    const mobIcon = document.getElementById('mobileNavSyncIcon');
+                    const mobLabel = document.getElementById('mobileNavSyncLabel');
 
                     if (data.last_sync_error && data.pending_sync > 0) {
                         icon.innerText = '⚠️';
                         text.innerText = `Pending Sync (${data.pending_sync})`;
+                        if (mobIcon) mobIcon.innerText = '⚠️';
+                        if (mobLabel) mobLabel.innerText = `Pending (${data.pending_sync})`;
                         if (wrapper) wrapper.title = `Google Sheets Sync: ${data.last_sync_error}\nData Anda tetap tersimpan aman di SQLite lokal.\nKlik tombol ini untuk mencoba sinkronisasi atau tandai tersinkronisasi.`;
                     } else if (data.pending_sync > 0) {
                         icon.innerText = '⏳';
                         text.innerText = `Syncing (${data.pending_sync})`;
+                        if (mobIcon) mobIcon.innerText = '⏳';
+                        if (mobLabel) mobLabel.innerText = `Syncing (${data.pending_sync})`;
                         if (wrapper) wrapper.title = `${data.pending_sync} perubahan menunggu push ke Google Sheets`;
                     } else {
                         icon.innerText = '☁️';
                         text.innerText = 'Synced';
+                        if (mobIcon) mobIcon.innerText = '☁️';
+                        if (mobLabel) mobLabel.innerText = 'Synced';
                         if (wrapper) wrapper.title = 'Tersinkronisasi penuh';
                     }
                 })
@@ -5504,6 +6473,31 @@
             });
         });
     </script>
+
+    <!-- MOBILE BOTTOM NAVIGATION (APP DOCK) -->
+    <nav class="mobile-bottom-nav" id="mobileBottomNav">
+        <button type="button" class="mobile-nav-item active" id="mobileNavDashboard" onclick="switchTab('dashboardTab', this)">
+            <div class="mobile-nav-icon">📊</div>
+            <span class="mobile-nav-label">Dashboard</span>
+        </button>
+        <button type="button" class="mobile-nav-item" id="mobileNavReport" onclick="switchTab('reportTab', this)">
+            <div class="mobile-nav-icon">📋</div>
+            <span class="mobile-nav-label">Aktivitas</span>
+        </button>
+        <div class="mobile-nav-fab-wrap">
+            <button type="button" class="mobile-fab-btn" onclick="openAddModal()" title="Catat Aktivitas Baru" aria-label="Add Activity">
+                <span class="fab-icon">＋</span>
+            </button>
+        </div>
+        <button type="button" class="mobile-nav-item" id="mobileNavClientReport" onclick="openClientReportModal()">
+            <div class="mobile-nav-icon">📑</div>
+            <span class="mobile-nav-label">SLA Report</span>
+        </button>
+        <button type="button" class="mobile-nav-item" id="mobileNavSync" onclick="triggerManualSync()">
+            <div class="mobile-nav-icon" id="mobileNavSyncIcon">☁️</div>
+            <span class="mobile-nav-label" id="mobileNavSyncLabel">Sync</span>
+        </button>
+    </nav>
 </body>
 
 </html>
