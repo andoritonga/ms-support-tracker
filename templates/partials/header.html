@@ -1,0 +1,28 @@
+        <!-- HEADER -->
+        <div class="header">
+            <div class="header-left">
+                <img id="appLogo" class="logo"
+                    src="/static/logo.png"
+                    alt="Logo" />
+                <div>
+                    <div class="title">MS Support Activity Tracker</div>
+                    <div class="subtitle">Cloud Operations – Managed Service Support Logging System</div>
+                </div>
+            </div>
+            <div class="header-controls">
+                <button class="btn-client-report" onclick="openClientReportModal()" title="Generate client-facing SLA and monthly activity report">
+                    <span>📑</span> <span>Client SLA Report</span>
+                </button>
+                <button class="theme-toggle" id="btnSyncStatus" onclick="triggerManualSync()" title="Click to trigger background sync with Google Sheets">
+                    <span id="syncIcon">☁️</span> <span id="syncText">Synced</span>
+                </button>
+                <button class="btn-add-activity" id="btnAddActivity" onclick="openAddModal()">
+                    <span class="icon-plus">+</span>
+                    <span id="btnAddActivityText">Add Activity</span>
+                </button>
+                <button class="theme-toggle" onclick="toggleDarkMode()">
+                    <span id="themeIcon">🌙</span> <span id="themeText">Dark</span>
+                </button>
+            </div>
+        </div>
+

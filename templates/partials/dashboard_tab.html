@@ -1,0 +1,149 @@
+        <!-- TAB 1: DASHBOARD & ANALYTICS -->
+        <div id="dashboardTab" class="tab-content active">
+
+            <!-- DASHBOARD DATE RANGE FILTER & CONTROLS -->
+            <div class="dashboard-filter-card">
+                <div class="dash-filter-inputs">
+                    <span class="preset-label">Analytics Period:</span>
+                    <div>
+                        <input type="date" id="dashStartDate" onchange="updateDashboardAnalytics()"
+                            placeholder="Start Date" />
+                    </div>
+                    <span style="font-weight:700; color:var(--muted);">-</span>
+                    <div>
+                        <input type="date" id="dashEndDate" onchange="updateDashboardAnalytics()"
+                            placeholder="End Date" />
+                    </div>
+                    <button class="btn-secondary" style="padding: 9px 16px;" onclick="resetDashboardFilter()">🔄 Reset
+                        Filter</button>
+                </div>
+                <div class="dash-btn-group">
+                    <button class="btn-secondary" style="padding: 9px 18px;" onclick="fetchLogs()">🔄 Refresh
+                        Data</button>
+                    <button class="btn-secondary" style="padding: 9px 18px;" onclick="exportDashboardExcel()" title="Export current dashboard period activities to Excel">
+                        <span>📊</span> Export Excel
+                    </button>
+                    <button class="btn-client-report-secondary" onclick="openClientReportModal()" title="Generate client-facing monthly SLA and activity report">
+                        <span>📑</span> Client SLA Report
+                    </button>
+                    <button class="btn-summary" onclick="generateExecutiveSummary()" title="Print traditional HTML report">
+                        <span>📄</span>
+                        <span>Print Summary</span>
+                    </button>
+                    <button class="btn-ai-summary" onclick="openAISummaryModal()" title="Generate AI Executive Analysis using Gemini">
+                        <span>✨</span>
+                        <span>Gemini AI Summary</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- QUICK STATS SUMMARY BANNER -->
+            <div class="stats-container">
+                <div class="stat-card">
+                    <span class="stat-label">Total Logs</span>
+                    <span id="statTotal" class="stat-value">0</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">Total Duration</span>
+                    <span id="statHours" class="stat-value" style="color: var(--accent);">0h 0m</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">In Progress</span>
+                    <span id="statInProgress" class="stat-value" style="color: #b45309;">0</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">Closed</span>
+                    <span id="statClosed" class="stat-value" style="color: #15803d;">0</span>
+                </div>
+            </div>
+
+            <!-- MSIG MANAGED SERVICES CONTRACT TICKET METER -->
+            <div class="msig-quota-card" id="msigQuotaCard">
+                <div class="msig-quota-header">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <span style="font-size: 24px;">🎫</span>
+                        <div>
+                            <div style="font-size: 14px; font-weight: 800; color: var(--text); display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                                <span>Client Contract Ticket Consumption</span>
+                                <div class="contract-client-toggle">
+                                    <button type="button" class="btn-contract-toggle active" id="btnContractMSIG" onclick="switchContractClient('MSIG')">MSIG</button>
+                                    <button type="button" class="btn-contract-toggle" id="btnContractASJ" onclick="switchContractClient('ASJ')">ASJ</button>
+                                </div>
+                            </div>
+                            <div style="font-size: 11.5px; color: var(--muted); margin-top: 2px;">
+                                Rules: <strong>Issue</strong> = 1.0 Tkt | <strong>Support Changes ≤4h</strong> = 0.5 Tkt | <strong>Support Changes >4h</strong> = 1.0 Tkt | <strong>Non-Changes / Inquiry</strong> = 0 Tkt
+                            </div>
+                        </div>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 12px; font-weight: 700; color: var(--muted);" id="msigQuotaClientLabel">MSIG Quota:</span>
+                        <input type="number" id="msigQuotaLimit" value="50" min="1" max="1000" style="width: 65px; padding: 4px 8px; font-size: 12px; font-weight: 800; text-align: center; border-radius: 8px;" onchange="saveMsigQuotaLimit()" />
+                        <span style="font-size: 12px; font-weight: 700; color: var(--muted);">Tkts</span>
+                    </div>
+                </div>
+
+                <div style="margin: 14px 0 8px 0;">
+                    <div style="display: flex; justify-content: space-between; font-size: 12.5px; font-weight: 700; margin-bottom: 6px;">
+                        <span>Deducted: <strong id="msigTicketsUsedText" style="color: var(--primary); font-size: 15px;">0.0</strong> Tickets</span>
+                        <span>Remaining: <strong id="msigTicketsRemainingText" style="color: #15803d;">50.0</strong> Tickets (<span id="msigQuotaPercentText">0%</span>)</span>
+                    </div>
+                    <div class="msig-progress-bar-bg">
+                        <div class="msig-progress-bar-fill" id="msigProgressBarFill" style="width: 0%; background: linear-gradient(90deg, #10b981, #06b6d4);"></div>
+                    </div>
+                </div>
+
+                <div class="msig-chips-grid">
+                    <div class="msig-chip">
+                        <span class="msig-chip-title">🔥 Issues (1.0x)</span>
+                        <span class="msig-chip-value" id="msigCountIssue">0 <small style="font-weight: normal; font-size: 11px;">(0.0 tkt)</small></span>
+                    </div>
+                    <div class="msig-chip">
+                        <span class="msig-chip-title">⚡ Changes ≤ 4h (0.5x)</span>
+                        <span class="msig-chip-value" id="msigCountSupportHalf">0 <small style="font-weight: normal; font-size: 11px;">(0.0 tkt)</small></span>
+                    </div>
+                    <div class="msig-chip">
+                        <span class="msig-chip-title">🚀 Changes > 4h (1.0x)</span>
+                        <span class="msig-chip-value" id="msigCountSupportFull">0 <small style="font-weight: normal; font-size: 11px;">(0.0 tkt)</small></span>
+                    </div>
+                    <div class="msig-chip">
+                        <span class="msig-chip-title">💬 Non-Changes / Inq. (0x)</span>
+                        <span class="msig-chip-value" id="msigCountSupportZero">0 <small style="font-weight: normal; font-size: 11px;">(Free)</small></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- DASHBOARD ANALYTICS CHARTS -->
+            <div class="dashboard-grid">
+                <!-- BARIS 1: Customer (Full Width) -->
+                <div class="chart-card full-width">
+                    <div class="chart-title">Support Hours by Customer</div>
+                    <div class="chart-container">
+                        <canvas id="customerChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- BARIS 2: Daily Trend (Full Width) -->
+                <div class="chart-card full-width">
+                    <div class="chart-title" id="trendChartTitle">Daily Activity Log Trend</div>
+                    <div class="chart-container">
+                        <canvas id="trendChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- BARIS 3: Service & Category (Split 2 Kolom) -->
+                <div class="chart-card">
+                    <div class="chart-title">Logs Breakdown by Service</div>
+                    <div class="chart-container">
+                        <canvas id="serviceChart"></canvas>
+                    </div>
+                </div>
+
+                <div class="chart-card">
+                    <div class="chart-title">Category Breakdown</div>
+                    <div class="chart-container">
+                        <canvas id="categoryChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+

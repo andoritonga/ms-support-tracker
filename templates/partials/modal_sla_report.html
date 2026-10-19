@@ -1,0 +1,64 @@
+    <!-- MODAL POP-UP 4: CLIENT-FACING SLA & MONTHLY REPORT -->
+    <div id="clientReportModal" class="modal-overlay">
+        <div class="modal-box" style="max-width: 680px;">
+            <div class="modal-drag-handle"></div>
+            <div class="modal-header">
+                <div>
+                    <div class="modal-title" style="display: flex; align-items: center; gap: 8px;">
+                        <span>📑</span>
+                        <span>Client SLA & Monthly Activity Report</span>
+                    </div>
+                    <div style="font-size: 11px; color: var(--muted); margin-top: 4px;">
+                        Generate an official, branded monthly support delivery and SLA compliance report for clients
+                    </div>
+                </div>
+                <button class="btn-secondary" style="padding: 4px 10px;" onclick="closeClientReportModal()">✕</button>
+            </div>
+
+            <div class="grid">
+                <div>
+                    <label>Client / Customer</label>
+                    <select id="slaReportCustomer"></select>
+                </div>
+                <div>
+                    <label>Report Month & Year</label>
+                    <input type="month" id="slaReportMonth" />
+                </div>
+                <div>
+                    <label>Cloud Service Scope</label>
+                    <select id="slaReportService">
+                        <option value="All">All Services (Google Cloud, Alibaba, etc.)</option>
+                        <option value="Google Cloud">Google Cloud</option>
+                        <option value="Alibaba Cloud">Alibaba Cloud</option>
+                        <option value="Zoom">Zoom</option>
+                        <option value="VOD">VOD</option>
+                    </select>
+                </div>
+                <div>
+                    <label>Target SLA Commitment</label>
+                    <input type="text" id="slaReportTarget" value="99.5%" placeholder="e.g. 99.5%" />
+                </div>
+                <div class="full">
+                    <label>Prepared By (Lead Engineer / Team)</label>
+                    <input type="text" id="slaReportPreparedBy" value="Ando Ritonga – Lead Cloud Managed Services" />
+                </div>
+                <div class="full">
+                    <label>Document Title</label>
+                    <input type="text" id="slaReportTitle" value="Monthly Managed Services Support & SLA Delivery Report" />
+                </div>
+                <div class="full">
+                    <label>Executive Highlights & Scope (Optional)</label>
+                    <textarea id="slaReportNotes" rows="2" placeholder="e.g. All routine infrastructure maintenance, cloud backups, and proactive monitoring activities were performed with zero unscheduled downtime."></textarea>
+                </div>
+            </div>
+
+            <div class="actions" style="margin-top: 20px; justify-content: space-between;">
+                <button type="button" class="btn-secondary" onclick="closeClientReportModal()">Cancel</button>
+                <button type="button" class="btn-client-report" onclick="generateClientSlaReport()">
+                    <span>🖨️</span> Generate & Print SLA PDF
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- CUSTOMER DOSSIER DRAWER & BACKDROP -->

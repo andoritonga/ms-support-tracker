@@ -1,0 +1,114 @@
+    <!-- MODAL POP-UP 2: EDIT RECORD -->
+    <div id="editModal" class="modal-overlay">
+        <div class="modal-box">
+            <div class="modal-drag-handle"></div>
+            <div class="modal-header">
+                <div class="modal-title">Edit Activity Record</div>
+                <button class="btn-secondary" style="padding: 4px 10px;" onclick="closeEditModal()">✕</button>
+            </div>
+            <div class="grid">
+                <input type="hidden" id="editRowId" />
+                <div>
+                    <label>Customer</label>
+                    <input type="text" id="editCustomer" list="customerListOptions" placeholder="Customer name..." autocomplete="off" />
+                    <datalist id="customerListOptions"></datalist>
+                </div>
+                <div>
+                    <label>Date</label>
+                    <input type="date" id="editDate" />
+                </div>
+                <div>
+                    <label>Raised By</label>
+                    <input type="text" id="editRaisedBy" />
+                </div>
+                <div>
+                    <label>Services</label>
+                    <select id="editServices">
+                        <option value="Google Cloud">Google Cloud</option>
+                        <option value="Alibaba Cloud">Alibaba Cloud</option>
+                        <option value="Zoom">Zoom</option>
+                        <option value="VOD">VOD</option>
+                    </select>
+                </div>
+                <div>
+                    <label>Category</label>
+                    <select id="editCategory">
+                        <option value="Issue">Issue</option>
+                        <option value="Support">Support</option>
+                        <option value="Others">Others</option>
+                    </select>
+                </div>
+                <div>
+                    <label>GCP / Project ID</label>
+                    <input type="text" id="editProject" placeholder="e.g. prj-msig-legacy" />
+                </div>
+                <div>
+                    <label>Status</label>
+                    <select id="editStatus">
+                        <option value="In Progress">In Progress</option>
+                        <option value="Closed">Closed</option>
+                    </select>
+                </div>
+
+                <!-- MSIG TICKET EVALUATION HELPER (EDIT) -->
+                <div class="full" id="msigEditHelper" style="display: none; background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.25); border-radius: 10px; padding: 10px 14px; margin-top: 4px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="font-size: 18px;">🎫</span>
+                            <div>
+                                <strong style="color: var(--primary); font-size: 12.5px;" id="contractEditHelperTitle">Potong Kuota Tiket MSIG:</strong>
+                                <span id="msigEditReasonText" style="font-size: 11.5px; color: var(--muted); margin-left: 6px;">Tentukan kuota tiket untuk log ini</span>
+                            </div>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <select id="editTicketDeduction" style="padding: 5px 10px; font-weight: 700; border-radius: 6px; border: 1.5px solid var(--primary); background: var(--bg); color: var(--text); font-size: 12.5px; cursor: pointer;">
+                                <option value="0">⚪ 0 Tiket (Free / Inquiry)</option>
+                                <option value="0.5">🎫 0.5 Tiket (Changes ≤ 4h)</option>
+                                <option value="1.0">🎫 1.0 Tiket (Issue / Changes > 4h)</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <div class="full" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: -4px;">
+                    <label style="margin: 0;">Task Description</label>
+                    <div style="display: flex; gap: 8px;">
+                        <button type="button" class="btn-kb-inline" id="btnKbSearchEdit" onclick="triggerKbSearch('edit')" title="Search Knowledge Base for past similar solutions">
+                            <span>💡</span> Past Solutions
+                        </button>
+                        <button type="button" class="btn-ai-inline" id="btnPolishEdit" onclick="polishFormWithAI('edit')" title="Use Gemini AI to polish and improve grammar & clarity">
+                            <span>✨</span> Polish Notes with AI
+                        </button>
+                    </div>
+                </div>
+                <div class="full" style="margin-top: 0;">
+                    <textarea id="editTaskDescription" rows="3" oninput="debounceKbSearch('edit')"></textarea>
+                    <!-- KNOWLEDGE BASE AUTO-SUGGEST PANEL -->
+                    <div id="kbSuggestionsEdit" class="kb-suggestions-container" style="display: none;"></div>
+                </div>
+                <div class="full">
+                    <label>Root Cause</label>
+                    <textarea id="editRootCause" rows="2"></textarea>
+                </div>
+                <div class="full">
+                    <label>Solution</label>
+                    <textarea id="editSolution" rows="2"></textarea>
+                </div>
+                <div>
+                    <label>Clock In</label>
+                    <input type="datetime-local" id="editClockIn" />
+                </div>
+                <div>
+                    <label>Clock Out</label>
+                    <input type="datetime-local" id="editClockOut" />
+                </div>
+                <div class="full">
+                    <label>Remarks</label>
+                    <textarea id="editRemarks" rows="2"></textarea>
+                </div>
+            </div>
+            <div class="actions">
+                <button class="btn-secondary" onclick="closeEditModal()">Cancel</button>
+                <button onclick="saveEditModal()">Save Changes</button>
+            </div>
+        </div>
+    </div>

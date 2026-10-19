@@ -1,0 +1,29 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "ms-tracker",
+  "main": "src/worker.js",
+  "compatibility_date": "2024-09-23",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "ms-tracker",
+      "database_id": "YOUR_D1_DATABASE_ID"
+    }
+  ],
+  "triggers": {
+    "crons": [
+      "*/10 * * * *"
+    ]
+  },
+  "vars": {
+    "SPREADSHEET_LOGS_ID": "your_activity_logs_spreadsheet_id_here",
+    "SPREADSHEET_CONFIG_ID": "your_customers_config_spreadsheet_id_here"
+  }
+}

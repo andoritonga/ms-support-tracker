@@ -1,0 +1,170 @@
+        <!-- TAB 2: VIEW REPORT -->
+        <div id="reportTab" class="tab-content">
+            <div class="card">
+
+                <!-- MOBILE SEARCH BAR (Prominent on Mobile) -->
+                <div class="mobile-search-bar">
+                    <span class="msearch-icon">🔍</span>
+                    <input type="text" id="mobileSearchInput" placeholder="Cari aktivitas atau task..." oninput="syncMobileSearch(this.value)" />
+                    <button type="button" class="msearch-clear" id="btnMobileSearchClear" onclick="clearMobileSearch()" style="display: none;">✕</button>
+                </div>
+
+                <!-- QUICK FILTER PRESETS -->
+                <div class="preset-container">
+                    <span class="preset-label">Quick Presets:</span>
+                    <button class="preset-btn" onclick="applyPreset('today', this)">⚡ Today</button>
+                    <button class="preset-btn" onclick="applyPreset('pending', this)">📌 Pending Tasks</button>
+                    <button class="preset-btn" onclick="applyPreset('thisMonth', this)">📅 This Month</button>
+                    <button class="preset-btn" onclick="applyPreset('reset', this)">🔄 Reset All</button>
+
+                    <!-- MOBILE VIEW MODE TOGGLE (Cards vs Table) -->
+                    <div class="mobile-view-toggle">
+                        <button type="button" class="mview-btn active" id="mviewCardBtn" onclick="setMobileViewMode('cards')">📋 Kartu</button>
+                        <button type="button" class="mview-btn" id="mviewTableBtn" onclick="setMobileViewMode('table')">⊞ Tabel</button>
+                    </div>
+
+                    <div style="position: relative; display: inline-block;">
+                        <button class="preset-btn" id="btnColumnVisibility" onclick="toggleColumnVisibilityMenu(event)" title="Kustomisasi kolom tabel yang ditampilkan">
+                            👁️ Kolom
+                        </button>
+                        <div id="columnVisibilityDropdown" class="column-visibility-dropdown" style="display: none;" onclick="event.stopPropagation()">
+                            <div class="col-dropdown-header">
+                                <span>Kustomisasi Kolom</span>
+                                <button type="button" class="btn-text-close" onclick="closeColumnVisibilityMenu()">✕</button>
+                            </div>
+                            <div class="col-dropdown-list">
+                                <label><input type="checkbox" data-col="customer" onchange="toggleColumn(this)"> Customer</label>
+                                <label><input type="checkbox" data-col="date" onchange="toggleColumn(this)"> Date</label>
+                                <label><input type="checkbox" data-col="raisedBy" onchange="toggleColumn(this)"> Raised By</label>
+                                <label><input type="checkbox" data-col="services" onchange="toggleColumn(this)"> Services</label>
+                                <label><input type="checkbox" data-col="category" onchange="toggleColumn(this)"> Category & Quota</label>
+                                <label><input type="checkbox" data-col="taskDescription" onchange="toggleColumn(this)"> Task Description</label>
+                                <label><input type="checkbox" data-col="duration" onchange="toggleColumn(this)"> Duration</label>
+                                <label><input type="checkbox" data-col="status" onchange="toggleColumn(this)"> Status</label>
+                                <label><input type="checkbox" data-col="action" onchange="toggleColumn(this)"> Action</label>
+                            </div>
+                            <div class="col-dropdown-footer">
+                                <button type="button" class="btn-secondary" style="padding: 3px 8px; font-size: 11px;" onclick="resetColumnVisibility()">↺ Reset Default</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <button class="preset-btn" style="margin-left: auto; background: rgba(34, 197, 94, 0.1); color: #16a34a; border-color: #86efac; font-weight: 800;" onclick="exportTableExcel()" title="Export currently filtered table rows to Excel .xlsx">
+                        📊 Export Excel (.xlsx)
+                    </button>
+                </div>
+
+                <!-- MOBILE FILTER ACCORDION TOGGLE -->
+                <button type="button" class="mobile-filter-toggle-btn" id="btnToggleMobileFilter" onclick="toggleMobileFilters()">
+                    <span style="display: flex; align-items: center; gap: 8px;">
+                        <span>⚙️</span>
+                        <span>Filter & Pengurutan</span>
+                        <span class="mobile-filter-active-count" id="mobileFilterCount" style="display: none;">0</span>
+                    </span>
+                    <span id="mobileFilterToggleIcon">▾</span>
+                </button>
+
+                <!-- ADVANCED FILTER BAR -->
+                <div class="filter-bar" id="filterBarContainer">
+                    <div>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                            <label style="margin: 0;">Filter Customer</label>
+                            <button type="button" class="btn-dossier-link" onclick="openSelectedCustomerDossier()" title="Buka Dossier Customer Terpilih">🗂️ Dossier</button>
+                        </div>
+                        <select id="filterCustomer" onchange="onManualFilterChange()">
+                            <option value="">All Customers</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label>Filter Status</label>
+                        <select id="filterStatus" onchange="onManualFilterChange()">
+                            <option value="">All Statuses</option>
+                            <option value="In Progress">In Progress</option>
+                            <option value="Closed">Closed</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label>Start Date</label>
+                        <input type="date" id="filterStartDate" onchange="onManualFilterChange()" />
+                    </div>
+                    <div>
+                        <label>End Date</label>
+                        <input type="date" id="filterEndDate" onchange="onManualFilterChange()" />
+                    </div>
+                    <div>
+                        <label>Search Task</label>
+                        <input type="text" id="searchKeyword" placeholder="Search keywords..."
+                            onkeyup="onManualFilterChange()" />
+                    </div>
+                    <div>
+                        <label>Sort Order</label>
+                        <select id="sortOrderSelect" onchange="onSortOrderChange()">
+                            <option value="sheet_desc" selected>Sheet Order (Bottom / Newest)</option>
+                            <option value="sheet_asc">Sheet Order (Top / Oldest)</option>
+                            <option value="date_desc">Date (Newest First)</option>
+                            <option value="date_asc">Date (Oldest First)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label>Rows Per Page</label>
+                        <select id="pageSizeSelect" onchange="changePageSize()">
+                            <option value="10" selected>10 Rows</option>
+                            <option value="25">25 Rows</option>
+                            <option value="50">50 Rows</option>
+                            <option value="100">100 Rows</option>
+                            <option value="200">200 Rows</option>
+                            <option value="300">300 Rows</option>
+                        </select>
+                    </div>
+                    <div style="display: flex; align-items: flex-end;">
+                        <button class="btn-secondary" onclick="fetchLogs(true)" style="width: 100%;" title="Pull latest changes from Google Sheets and refresh table">🔄 Sync & Refresh</button>
+                    </div>
+                </div>
+
+                <div id="reportLoading" class="loading" style="margin-bottom: 16px;">
+                    <div class="spinner"></div>
+                    Loading report data...
+                </div>
+
+                <!-- MOBILE ACTIVITY CARDS FEED (Default on Mobile) -->
+                <div id="reportMobileCards" class="mobile-cards-feed"></div>
+
+                <!-- TABLE REPORT -->
+                <div class="table-responsive">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th class="col-expand" style="width: 24px;"></th>
+                                <th class="col-customer">Customer</th>
+                                <th class="col-date" style="width: 110px;">Date</th>
+                                <th class="col-raisedBy">Raised By</th>
+                                <th class="col-services">Services</th>
+                                <th class="col-category">Category</th>
+                                <th class="col-taskDescription">Task Description</th>
+                                <th class="col-duration" style="width: 80px;">Duration</th>
+                                <th class="col-status" style="width: 110px;">Status</th>
+                                <th class="col-action" style="width: 100px;">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="reportTbody">
+                            <tr>
+                                <td colspan="10" style="text-align: center; color: var(--muted); padding: 24px;">Loading
+                                    data...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- PAGINATION BAR -->
+                <div class="pagination-bar">
+                    <div id="paginationInfo">Showing 0 of 0 entries</div>
+                    <div class="pagination-controls">
+                        <button id="prevBtn" class="page-btn" onclick="changePage(-1)" disabled>Previous</button>
+                        <span id="pageIndicator" style="font-weight: 700;">Page 1</span>
+                        <button id="nextBtn" class="page-btn" onclick="changePage(1)" disabled>Next</button>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+

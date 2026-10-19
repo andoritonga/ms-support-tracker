@@ -1,14 +1,15 @@
-# MS Support Activity Tracker (CloudOps Tracker)
+# MS Support Activity Tracker
 
 [![Python 3.11](https://img.shields.io/badge/Python-3.11-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.110+-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers_%26_D1-F38020.svg?logo=cloudflare&logoColor=white)](https://workers.cloudflare.com/)
 [![SQLite](https://img.shields.io/badge/SQLite-Local_Storage-003B57.svg?logo=sqlite&logoColor=white)](https://www.sqlite.org/)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg?logo=docker&logoColor=white)](https://www.docker.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A high-performance activity logging, time tracking, and SLA analytics dashboard built for Managed Services (MS), Cloud Operations, and DevOps engineers. 
+A high-performance activity logging, time tracking, and SLA analytics dashboard built for Managed Services (MS), Cloud Operations, and DevOps engineers.
 
-Combines **blazing-fast local SQLite storage (<5ms response time)** with **background two-way synchronization to Google Sheets**, complete with printable executive SLA reports, client dossiers, and Google Gemini AI insights.
+Combines **blazing-fast local SQLite / Cloudflare D1 storage (<20ms response time)** with **background two-way synchronization to Google Sheets**, complete with printable executive SLA reports, client dossiers, Knowledge Base auto-suggest, and Google Gemini AI insights.
 
 ---
 
@@ -19,6 +20,14 @@ Combines **blazing-fast local SQLite storage (<5ms response time)** with **backg
   - Capture detailed incident context: Task Description, Root Cause (RC), Solution/Fix, and Remarks.
   - Expandable row details for instant technical inspection.
 
+- **⏱️ Flexible Time & Duration Tracking**:
+  - Live Stopwatch / Timer mode with persistent state.
+  - Manual backdated time entry (Clock-In / Clock-Out) with automatic duration calculation.
+  - Supports cross-midnight, multi-day timestamps, and automatic duration normalization/preservation on log edits.
+
+- **🧠 Knowledge Base Auto-Suggest**:
+  - Real-time search and auto-suggestion of past resolved Root Causes and Solutions while logging or editing activities.
+
 - **🗂️ 360° Quick Customer Dossier**:
   - Slide-out drawer displaying all-time KPIs, active ongoing tasks (`In Progress`), top requested services, and frequent contacts.
   - 1-click status resolution (`✓ Selesai` / `Closed`) directly from the drawer.
@@ -28,19 +37,11 @@ Combines **blazing-fast local SQLite storage (<5ms response time)** with **backg
   - User preferences persist automatically in browser `localStorage`.
 
 - **🎫 Contract Ticket Quota & SLA Meter**:
-  - Track contract ticket deductions (e.g. `0 Tkt` for inquiry, `0.5 Tkt` for changes ≤ 4h, `1.0 Tkt` for incidents/changes > 4h).
-  - Real-time visual progress bar showing deducted vs. remaining quota.
-
-- **⚡ Dual-Storage Architecture**:
-  - **Local SQLite Datastore**: Instant page loads, zero network latency, and offline resiliency.
-  - **Async Two-Way Google Sheets Sync**: Background worker keeps SQLite and Google Sheets synchronized without blocking UI threads.
-
-- **⏱️ Flexible Time Logging**:
-  - Live Stopwatch / Timer mode with persistent state.
-  - Manual backdated time entry (Clock-In / Clock-Out) with automatic duration calculation.
+  - Track contract ticket deductions (`0 Tkt` for inquiry, `0.5 Tkt` for changes ≤ 4h, `1.0 Tkt` for incidents/changes > 4h).
+  - Real-time visual progress bar showing deducted vs. remaining contract quota.
 
 - **📊 Visual Dashboard & Executive Analytics**:
-  - Chart.js visualizations for client workload distribution, category split, and service usage.
+  - Interactive Chart.js visualizations for client workload distribution, category split, service usage, and **Monthly Daily Activity Trend**.
   - Filterable by custom date ranges and presets (*Today*, *Pending*, *This Month*).
 
 - **📑 Printable Client SLA Reports & Excel Export**:
@@ -48,40 +49,45 @@ Combines **blazing-fast local SQLite storage (<5ms response time)** with **backg
   - 1-click Excel (`.xlsx`) export for filtered views.
 
 - **✨ Google Gemini AI Integration**:
-  - AI Executive Summary: Analyzes activity trends and highlights operational accomplishments.
-  - AI Note Polish: Refines technical root causes and solutions into client-ready professional summaries.
+  - **AI Executive Summary**: Analyzes activity trends and highlights operational accomplishments.
+  - **AI Note Polish**: Refines technical Task Descriptions, Root Causes, and Solutions into client-ready professional summaries.
+
+- **⚡ Dual Deployment & Hybrid Storage Architecture**:
+  - **Self-Hosted (Docker + FastAPI + SQLite)** or **100% Serverless (Cloudflare Workers + Cloudflare D1)**.
+  - **Async Two-Way Google Sheets Sync**: Background worker/cron keeps SQLite/D1 and Google Sheets (`Activity_Log`, `Customer_Config`, `Customer_Resources`) synchronized without blocking UI threads.
 
 - **🌙 Modern UI & PWA Ready**:
   - Seamless Dark and Light theme switching.
-  - Progressive Web App (PWA) with service worker caching for mobile homescreen installation.
+  - Progressive Web App (PWA) with service worker caching and mobile bottom navigation dock for homescreen installation.
 
 ---
 
 ## Architecture Overview
 
 ```text
-┌────────────────────────────────────────────────────────┐
-│                   Web Browser / PWA                    │
-│   (Responsive Dashboard, Customer Dossier, Hotkeys)    │
-└───────────────────────────┬────────────────────────────┘
-                            │ HTTP REST / JSON
-┌───────────────────────────▼────────────────────────────┐
-│                    FastAPI Backend                     │
-│  ┌───────────────────────┐  ┌───────────────────────┐  │
-│  │   SQLite Local DB     │  │ Async Sync Worker     │  │
-│  │   (<5ms Read/Write)   │  │ (Two-Way Background)  │  │
-│  └───────────────────────┘  └───────────┬───────────┘  │
-└─────────────────────────────────────────┼──────────────┘
-                                          │ OAuth2 Service Account
-                              ┌───────────▼───────────┐
-                              │     Google Sheets     │
-                              │ (Activity Log/Config) │
-                              └───────────────────────┘
+┌────────────────────────────────────────────────────────────────────┐
+│                         Web Browser / PWA                          │
+│     (Modular UI, Customer Dossier, SLA Reports, KB Auto-Suggest)   │
+└─────────────────┬────────────────────────────────┬─────────────────┘
+                  │ Option A: Self-Hosted          │ Option B: Serverless
+┌─────────────────▼────────────────┐ ┌─────────────▼─────────────────┐
+│         FastAPI Backend          │ │      Cloudflare Workers       │
+│  ┌────────────┐ ┌──────────────┐ │ │  ┌────────────┐ ┌───────────┐ │
+│  │ SQLite DB  │ │ Async Sync   │ │ │  │ Cloudflare │ │ Cron Sync │ │
+│  │ (<5ms I/O) │ │ Background   │ │ │  │ D1 SQLite  │ │ (10 mins) │ │
+│  └────────────┘ └──────┬───────┘ │ │  └────────────┘ └─────┬─────┘ │
+└────────────────────────┼─────────┘ └───────────────────────┼───────┘
+                         │           OAuth2 / JWT            │
+                         └─────────────────┬─────────────────┘
+                               ┌───────────▼───────────┐
+                               │     Google Sheets     │
+                               │ (Activity Log/Config) │
+                               └───────────────────────┘
 ```
 
 ---
 
-## Quick Start with Docker
+## Option A: Quick Start with Docker (FastAPI + SQLite)
 
 ### 1. Prerequisites
 - [Docker](https://docs.docker.com/get-docker/) & Docker Compose
@@ -133,6 +139,56 @@ Access the dashboard in your browser:
 
 ---
 
+## Option B: Deploying to Cloudflare Workers & D1 (100% Serverless)
+
+You can run this application entirely serverless on Cloudflare using **Cloudflare Workers (with Static Assets)** and **Cloudflare D1** (Serverless SQLite), with zero servers or Docker containers required.
+
+### 1. Prerequisites
+- Node.js 18+ installed.
+- A free [Cloudflare](https://dash.cloudflare.com/) account.
+- Install dependencies and authenticate Wrangler CLI:
+  ```bash
+  npm install
+  npx wrangler login
+  ```
+
+### 2. Create the Cloudflare D1 Database
+Create the remote D1 database:
+```bash
+npx wrangler d1 create ms-tracker
+```
+Copy the `database_id` from the output and paste it into [`wrangler.jsonc`](wrangler.jsonc) under `d1_databases[0].database_id`, along with your `SPREADSHEET_LOGS_ID` and `SPREADSHEET_CONFIG_ID` in `vars`.
+
+### 3. Initialize the D1 Schema
+Execute the schema migration on your remote database (Note: the worker also auto-ensures schema and bootstraps initial sync on first request):
+```bash
+npm run db:init:remote
+# Or directly: npx wrangler d1 execute ms-tracker --remote --file=./schema.sql
+```
+
+### 4. Configure Cloudflare Secrets
+Set your Google Cloud Service Account and optional Gemini AI / Basic Auth credentials as Cloudflare encrypted secrets:
+```bash
+# Upload your Google Service Account JSON:
+npx wrangler secret put SERVICE_ACCOUNT_JSON < service-account.json
+
+# (Optional) Set your Gemini API Key:
+npx wrangler secret put GEMINI_API_KEY
+
+# (Optional) HTTP Basic Auth credentials:
+npx wrangler secret put AUTH_USERNAME
+npx wrangler secret put AUTH_PASSWORD
+```
+
+### 5. Build and Deploy
+Build the static bundle from the modular HTML templates and deploy to Cloudflare:
+```bash
+npm run deploy
+```
+Your app will be live at `https://ms-tracker.<your-subdomain>.workers.dev` (or your custom domain) with automated 10-minute Google Sheets sync cron triggers!
+
+---
+
 ## Google Sheets Integration Setup
 
 If using Google Sheets as a synchronized cloud datastore:
@@ -140,16 +196,16 @@ If using Google Sheets as a synchronized cloud datastore:
 1. In Google Cloud Console, enable **Google Drive API** and **Google Sheets API**.
 2. Create a Service Account, download the JSON key, and save it as `service-account.json`.
 3. Create two Google Sheets:
-   - **Activity Logs Sheet**: Contains columns for `No`, `Date`, `Customer`, `Raised By`, `Services`, `Category`, `Project`, `Task Description`, `Root Cause`, `Solution`, `Clock In`, `Clock Out`, `Duration`, `Status`, `Remarks`, `Ticket Deduction`.
-   - **Config Sheet**: Contains tabs for `Customer`, `Services`, `Category`, and customer-specific engineers/reporters.
+   - **Activity Logs Sheet (`Activity_Log`)**: Contains columns for `No`, `Date`, `Customer`, `Raised By`, `Services`, `Category`, `Project`, `Task Description`, `Root Cause`, `Solution`, `Clock In`, `Clock Out`, `Duration`, `Status`, `Remarks`, `Ticket Deduction`.
+   - **Config Sheet**: Contains tabs for `Customer_Config` and `Customer_Resources` (customer-specific engineers/reporters and GCP Project IDs).
 4. Share both spreadsheets with the Service Account email with **Editor** permissions.
-5. Set `SPREADSHEET_LOGS_ID` and `SPREADSHEET_CONFIG_ID` in `.env`.
+5. Set `SPREADSHEET_LOGS_ID` and `SPREADSHEET_CONFIG_ID` in `.env` (for Docker) or `wrangler.jsonc` (for Cloudflare Workers).
 
 ---
 
-## Exposing via Cloudflare Tunnel (HTTPS)
+## Exposing via Cloudflare Tunnel (HTTPS for Self-Hosted Docker)
 
-To access your instance securely over the internet without opening inbound firewall ports:
+To access your local Docker instance securely over the internet without opening inbound firewall ports:
 
 ### Ad-hoc Quick Tunnel:
 ```bash
@@ -170,19 +226,21 @@ cloudflared tunnel run --url http://localhost:8081 ms-tracker
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
 | `GET` | `/` | Web Application UI |
-| `GET` | `/healthz` | Health check & sync metadata |
-| `GET` | `/api/sync-status` | Google Sheets pending sync status |
-| `POST` | `/api/trigger-sync` | Trigger immediate two-way synchronization |
+| `GET` | `/healthz` | Health check, database storage status, and sync metadata |
+| `GET` | `/api/sync-status` | Current Google Sheets synchronization status and pending queue count |
+| `POST` | `/api/trigger-sync` | Manually trigger a full two-way synchronization cycle |
+| `POST` | `/api/force-resolve-pending-sync` | Mark pending local sync queue items as synced |
 | `GET` | `/api/customers` | List configured customers |
-| `GET` | `/api/customer-resources?customer=<name>` | Engineers and project IDs for selected customer |
-| `GET` | `/api/activity-logs` | Retrieve activity logs from SQLite |
-| `POST` | `/api/submit-activity` | Submit new activity log |
+| `GET` | `/api/customer-resources?customer=<name>` | Engineers/reporters and project IDs for selected customer |
+| `GET` | `/api/activity-logs?refresh=<bool>&order_by=<sort>` | Retrieve activity logs (supports `refresh=true` and custom sort order) |
+| `POST` | `/api/submit-activity` | Submit a new activity log |
 | `POST` | `/api/update-status` | Quick update status (`In Progress` / `Closed`) |
-| `POST` | `/api/update-ticket-deduction` | Update manual contract ticket deduction |
-| `POST` | `/api/update-record` | Edit existing activity record |
+| `POST` | `/api/update-ticket-deduction` | Quick update contract ticket deduction (`0`, `0.5`, `1.0`) |
+| `POST` | `/api/update-record` | Full edit of an existing activity record |
 | `DELETE` | `/api/delete-record/{row_id}` | Delete an activity record |
-| `POST` | `/api/ai-summary` | Generate executive AI summary using Gemini |
-| `POST` | `/api/ai-polish-notes` | Polish technical notes using Gemini |
+| `GET` | `/api/knowledge-base/search?q=<query>` | Search past resolved incidents, root causes, and solutions |
+| `POST` | `/api/ai/executive-summary` | Generate executive AI summary using Google Gemini |
+| `POST` | `/api/ai/polish` | Polish technical notes (`taskDescription`, `rootCause`, `solution`) using Gemini |
 
 ---
 

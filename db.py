@@ -55,10 +55,16 @@ def init_db():
 
     try:
         cursor.execute("ALTER TABLE activities ADD COLUMN ticket_deduction REAL DEFAULT 0.0;")
+    except Exception:
+        pass
+
+    try:
         cursor.execute("""
             UPDATE activities 
             SET ticket_deduction = 1.0 
-            WHERE UPPER(customer) LIKE '%MSIG%' AND LOWER(category) = 'issue' AND (ticket_deduction IS NULL OR ticket_deduction = 0.0);
+            WHERE (UPPER(customer) LIKE '%MSIG%' OR UPPER(customer) LIKE '%ASJ%') 
+              AND LOWER(category) = 'issue' 
+              AND (ticket_deduction IS NULL OR ticket_deduction = 0.0);
         """)
     except Exception:
         pass
@@ -386,7 +392,8 @@ def sync_activities_from_sheets(items: List[Dict[str, Any]]) -> int:
             updated_count += 1
         else:
             default_deduction = 0.0
-            if "MSIG" in (item.get("customer") or "").upper() and (item.get("category") or "").strip().lower() == "issue":
+            cust_upper = (item.get("customer") or "").upper()
+            if ("MSIG" in cust_upper or "ASJ" in cust_upper) and (item.get("category") or "").strip().lower() == "issue":
                 default_deduction = 1.0
 
             cursor.execute("""

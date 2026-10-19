@@ -1,5 +1,5 @@
-// Service Worker for XL Smart MS Support Tracker PWA
-const CACHE_NAME = 'ms-tracker-v1';
+// Service Worker for MS Support Tracker PWA
+const CACHE_NAME = 'ms-tracker-v2';
 const STATIC_ASSETS = [
   '/',
   '/manifest.json',
@@ -8,6 +8,16 @@ const STATIC_ASSETS = [
   '/static/icon-192.png',
   '/static/icon-512.png',
   '/static/logo.png',
+  '/static/logo-dark.png',
+  '/static/css/style.css',
+  '/static/js/app.js',
+  '/static/js/ticket_engine.js',
+  '/static/js/kb_search.js',
+  '/static/js/ai_summary.js',
+  '/static/js/sla_report.js',
+  '/static/js/analytics.js',
+  '/static/js/activities.js',
+  '/static/js/dossier.js',
   'https://cdn.jsdelivr.net/npm/chart.js',
   'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js',
   'https://cdn.jsdelivr.net/npm/marked/marked.min.js'

@@ -207,15 +207,7 @@ async def get_activity_logs(refresh: bool = False, order_by: str = "sheet_desc",
 async def submit_activity(data: ActivityPayload, background_tasks: BackgroundTasks, _auth: bool = Depends(check_auth)):
     try:
         # Calculate duration
-        duration_str = "00:00"
-        duration_mins = 0
-        t1 = sync_service.parse_time_to_datetime(data.clockIn, data.date)
-        t2 = sync_service.parse_time_to_datetime(data.clockOut, data.date)
-        if t1 and t2:
-            diff = int((t2 - t1).total_seconds() / 60)
-            if diff > 0:
-                duration_mins = diff
-                duration_str = f"{diff // 60:02d}:{diff % 60:02d}"
+        duration_str, duration_mins = sync_service.calculate_duration_tuple(data.clockIn, data.clockOut, data.date)
 
         activity_data = {
             "customer": data.customer,
@@ -273,15 +265,13 @@ async def update_ticket_deduction(data: UpdateTicketDeductionPayload, _auth: boo
 @app.post("/api/update-record")
 async def update_record(data: UpdateRecordPayload, background_tasks: BackgroundTasks, _auth: bool = Depends(check_auth)):
     try:
-        duration_str = "00:00"
-        duration_mins = 0
-        t1 = sync_service.parse_time_to_datetime(data.clockIn, data.date)
-        t2 = sync_service.parse_time_to_datetime(data.clockOut, data.date)
-        if t1 and t2:
-            diff = int((t2 - t1).total_seconds() / 60)
-            if diff > 0:
-                duration_mins = diff
-                duration_str = f"{diff // 60:02d}:{diff % 60:02d}"
+        duration_str, duration_mins = sync_service.calculate_duration_tuple(data.clockIn, data.clockOut, data.date)
+
+        if duration_mins == 0 and not data.clockIn and not data.clockOut:
+            existing = db.get_activity_by_id(data.rowId)
+            if existing and not existing.get("clock_in") and not existing.get("clock_out") and (existing.get("duration_minutes") or 0) > 0:
+                duration_str = existing.get("duration") or "00:00"
+                duration_mins = existing.get("duration_minutes") or 0
 
         activity_data = {
             "customer": data.customer,

@@ -1,5 +1,6 @@
 # Secrets & Credentials
 service-account*.json
+service_account*.json
 *.json.key
 *.bak
 .env
@@ -38,9 +39,16 @@ data/
 *.sqlite
 *.db
 
+# Node & Cloudflare Wrangler
+node_modules/
+.wrangler/
+public/
+
 # OS & Editors
 .DS_Store
 .vscode/
 .idea/
 *.swp
 *.swo
+
+

@@ -1,0 +1,16 @@
+{
+  "name": "ms-support-tracker",
+  "version": "1.0.0",
+  "description": "Cloudflare Worker & D1 Serverless MS Support Tracker",
+  "main": "src/worker.js",
+  "scripts": {
+    "build": "node build.js",
+    "dev": "node build.js && wrangler dev",
+    "deploy": "node build.js && wrangler deploy",
+    "db:init:local": "wrangler d1 execute ms-tracker-db --local --file=./schema.sql",
+    "db:init:remote": "wrangler d1 execute ms-tracker-db --remote --file=./schema.sql"
+  },
+  "devDependencies": {
+    "wrangler": "^3.109.0"
+  }
+}

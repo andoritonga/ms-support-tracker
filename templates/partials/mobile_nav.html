@@ -1,0 +1,24 @@
+    <!-- MOBILE BOTTOM NAVIGATION (APP DOCK) -->
+    <nav class="mobile-bottom-nav" id="mobileBottomNav">
+        <button type="button" class="mobile-nav-item active" id="mobileNavDashboard" onclick="switchTab('dashboardTab', this)">
+            <div class="mobile-nav-icon">📊</div>
+            <span class="mobile-nav-label">Dashboard</span>
+        </button>
+        <button type="button" class="mobile-nav-item" id="mobileNavReport" onclick="switchTab('reportTab', this)">
+            <div class="mobile-nav-icon">📋</div>
+            <span class="mobile-nav-label">Aktivitas</span>
+        </button>
+        <div class="mobile-nav-fab-wrap">
+            <button type="button" class="mobile-fab-btn" onclick="openAddModal()" title="Catat Aktivitas Baru" aria-label="Add Activity">
+                <span class="fab-icon">＋</span>
+            </button>
+        </div>
+        <button type="button" class="mobile-nav-item" id="mobileNavClientReport" onclick="openClientReportModal()">
+            <div class="mobile-nav-icon">📑</div>
+            <span class="mobile-nav-label">SLA Report</span>
+        </button>
+        <button type="button" class="mobile-nav-item" id="mobileNavSync" onclick="triggerManualSync()">
+            <div class="mobile-nav-icon" id="mobileNavSyncIcon">☁️</div>
+            <span class="mobile-nav-label" id="mobileNavSyncLabel">Sync</span>
+        </button>
+    </nav>

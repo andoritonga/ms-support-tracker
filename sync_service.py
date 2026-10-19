@@ -79,6 +79,15 @@ def parse_time_to_datetime(time_val: Any, base_date_str: str) -> Optional[dateti
         return None
     val_str = str(time_val).strip()
 
+    # Check if time_val contains its own YYYY-MM-DD date
+    dt_match = re.match(r'^(\d{4})-(\d{2})-(\d{2})[T\s](\d{1,2}):(\d{2})', val_str)
+    if dt_match:
+        yr, mo, dy, hr, mn = map(int, dt_match.groups())
+        try:
+            return datetime(yr, mo, dy, hr, mn)
+        except ValueError:
+            pass
+
     time_match = re.search(r'(\d{1,2}):(\d{2})', val_str)
     if time_match:
         hr = int(time_match.group(1))
@@ -86,12 +95,27 @@ def parse_time_to_datetime(time_val: Any, base_date_str: str) -> Optional[dateti
         
         base_d = date.today()
         if base_date_str:
+            cleaned_base = clean_date_format(base_date_str)
             try:
-                base_d = datetime.strptime(base_date_str, "%Y-%m-%d").date()
+                base_d = datetime.strptime(cleaned_base, "%Y-%m-%d").date()
             except ValueError:
                 pass
-        return datetime(base_d.year, base_d.month, base_d.day, hr, mn)
+        try:
+            return datetime(base_d.year, base_d.month, base_d.day, hr, mn)
+        except ValueError:
+            return None
     return None
+
+def calculate_duration_tuple(clock_in: Any, clock_out: Any, base_date_str: str = "") -> tuple[str, int]:
+    t1 = parse_time_to_datetime(clock_in, base_date_str)
+    t2 = parse_time_to_datetime(clock_out, base_date_str)
+    if t1 and t2:
+        diff = int((t2 - t1).total_seconds() / 60)
+        if diff < 0 and t1.date() == t2.date():
+            diff += 1440  # past midnight support when only time or same date given
+        if diff > 0:
+            return f"{diff // 60:02d}:{diff % 60:02d}", diff
+    return "00:00", 0
 
 def get_gspread_client():
     global _cached_client, _cached_client_time
@@ -202,6 +226,7 @@ def pull_activities_from_sheets():
             solution = get_val(row, "Solution")
             raw_clock_in = get_val(row, "Clock In") or get_val(row, "ClockIn")
             raw_clock_out = get_val(row, "Clock Out") or get_val(row, "ClockOut")
+            raw_duration = get_val(row, "Duration")
             status = get_val(row, "Status") or "In Progress"
             remarks = get_val(row, "Remarks")
 
@@ -210,15 +235,14 @@ def pull_activities_from_sheets():
 
             formatted_date = clean_date_format(raw_date)
 
-            duration_str = "00:00"
-            duration_mins = 0
-            t1 = parse_time_to_datetime(raw_clock_in, formatted_date)
-            t2 = parse_time_to_datetime(raw_clock_out, formatted_date)
-            if t1 and t2:
-                diff = int((t2 - t1).total_seconds() / 60)
-                if diff > 0:
-                    duration_mins = diff
-                    duration_str = f"{diff // 60:02d}:{diff % 60:02d}"
+            duration_str, duration_mins = calculate_duration_tuple(raw_clock_in, raw_clock_out, formatted_date)
+            if duration_mins == 0 and raw_duration:
+                dm_match = re.search(r'(\d{1,2}):(\d{2})', str(raw_duration))
+                if dm_match:
+                    dm = int(dm_match.group(1)) * 60 + int(dm_match.group(2))
+                    if dm > 0:
+                        duration_mins = dm
+                        duration_str = f"{dm // 60:02d}:{dm % 60:02d}"
 
             items.append({
                 "uuid": uuid_val or None,
@@ -284,7 +308,7 @@ def push_pending_to_sheets():
                     item["solution"],
                     item["clock_in"],
                     item["clock_out"],
-                    "",
+                    item["duration"] or "00:00",
                     item["status"],
                     item["remarks"]
                 ]
@@ -309,7 +333,7 @@ def push_pending_to_sheets():
                         item["solution"],
                         item["clock_in"],
                         item["clock_out"],
-                        "",
+                        item["duration"] or "00:00",
                         item["status"],
                         item["remarks"]
                     ]

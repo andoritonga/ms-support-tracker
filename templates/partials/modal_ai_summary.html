@@ -1,0 +1,64 @@
+    <!-- MODAL POP-UP 3: GEMINI AI EXECUTIVE SUMMARY -->
+    <div id="aiSummaryModal" class="modal-overlay">
+        <div class="modal-box" style="max-width: 860px; max-height: 90vh;">
+            <div class="modal-drag-handle"></div>
+            <div class="modal-header">
+                <div>
+                    <div class="modal-title" style="display: flex; align-items: center; gap: 8px;">
+                        <span>✨</span>
+                        <span>Gemini AI Executive Summary & Insights</span>
+                    </div>
+                    <div style="font-size: 11px; color: var(--muted); margin-top: 4px;">
+                        Autonomous operations analysis, systemic root cause breakdown, and proactive advisory powered by Gemini 2.5 Flash
+                    </div>
+                </div>
+                <button class="btn-secondary" style="padding: 4px 10px;" onclick="closeAISummaryModal()">✕</button>
+            </div>
+
+            <!-- CONFIGURATION & SCOPE BAR -->
+            <div class="ai-config-bar">
+                <div class="ai-config-info">
+                    <span class="ai-badge" id="aiPeriodBadge">📅 Period: All Time</span>
+                    <span class="ai-badge" id="aiCountBadge">📊 0 Activities</span>
+                </div>
+                <div class="ai-key-wrapper">
+                    <input type="password" id="geminiApiKeyInput" placeholder="Gemini API Key (optional if in .env)" onchange="saveGeminiApiKey(this.value)" />
+                    <button type="button" class="btn-secondary" style="padding: 6px 10px; font-size: 11px;" onclick="toggleApiKeyVisibility()" title="Show/Hide API Key">👁️</button>
+                </div>
+                <button class="btn-ai-summary" id="btnRunAISummary" onclick="generateAISummary()">
+                    <span>⚡</span> Generate Analysis
+                </button>
+            </div>
+
+            <!-- LOADING SPINNER -->
+            <div id="aiSummaryLoading" class="ai-loading-container" style="display: none;">
+                <div class="ai-spinner"></div>
+                <p id="aiLoadingStatus">Gemini is synthesizing support activities, analyzing root causes, and drafting executive recommendations...</p>
+            </div>
+
+            <!-- AI CONTENT VIEWER -->
+            <div id="aiSummaryBody" class="ai-markdown-content">
+                <div class="ai-empty-placeholder">
+                    <span style="font-size: 2.8rem; display: block; margin-bottom: 12px;">🧠</span>
+                    <h4>Ready to Generate Executive Briefing</h4>
+                    <p>Click "Generate Analysis" to process support activities within your selected dashboard date range. Gemini will analyze volume trends, highlight recurring incidents, assess customer health, and provide actionable operational recommendations.</p>
+                    <button class="btn-ai-summary" style="margin-top: 16px;" onclick="generateAISummary()">
+                        <span>⚡</span> Start Gemini Analysis
+                    </button>
+                </div>
+            </div>
+
+            <!-- FOOTER ACTIONS -->
+            <div class="actions" style="margin-top: 18px; justify-content: space-between; display: flex; align-items: center;">
+                <div style="display: flex; gap: 10px;">
+                    <button type="button" class="btn-secondary" id="btnCopyAI" onclick="copyAISummary()" style="display: none;">
+                        <span>📋</span> Copy Markdown
+                    </button>
+                    <button type="button" class="btn-secondary" id="btnPrintAI" onclick="printAISummary()" style="display: none;">
+                        <span>🖨️</span> Print / Save PDF
+                    </button>
+                </div>
+                <button type="button" class="btn-secondary" onclick="closeAISummaryModal()">Close</button>
+            </div>
+        </div>
+    </div>
