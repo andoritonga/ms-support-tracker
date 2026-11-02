@@ -78,8 +78,8 @@
                         <div class="kb-card-top">
                             <span class="kb-card-title">${escapeHtml(r.taskDescription || 'Past Incident')}</span>
                             <div class="kb-card-badges">
-                                <span class="kb-badge">${r.customer || 'General'}</span>
-                                <span class="kb-badge">${r.services || 'Cloud'}</span>
+                                <span class="kb-badge">${escapeHtml(r.customer || 'General')}</span>
+                                <span class="kb-badge">${escapeHtml(r.services || 'Cloud')}</span>
                             </div>
                         </div>
                         <div class="kb-card-body">

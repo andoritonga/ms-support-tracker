@@ -10,8 +10,19 @@
         let customerListCache = [];
 
         // Logo URLs
-        const LOGO_LIGHT = "/static/logo.png";
-        const LOGO_DARK = "/static/logo-dark.png";
+        const LOGO_LIGHT = "/static/logo-xlsmart.png";
+        const LOGO_DARK = "/static/logo-xlsmart-dark.png";
+
+        // Global 401 Session Expiry Interceptor for API calls
+        const _origFetch = window.fetch.bind(window);
+        window.fetch = async function (input, init) {
+            const res = await _origFetch(input, init);
+            const urlStr = typeof input === 'string' ? input : (input && input.url ? input.url : '');
+            if (res.status === 401 && urlStr.includes('/api/') && !urlStr.includes('/api/auth/')) {
+                window.location.replace('/login');
+            }
+            return res;
+        };
 
 
         // Helper: Formatter Date YYYY-MM-DD -> 3 August 2026
@@ -32,11 +43,27 @@
         document.getElementById('startDate').value = new Date().toISOString().split('T')[0];
 
         // Dynamic Dark Mode & Logo Toggle Switch
+        function applySavedThemePreference() {
+            const saved = localStorage.getItem('ms_theme');
+            if (saved === 'dark') {
+                document.body.setAttribute('data-theme', 'dark');
+                const iconEl = document.getElementById('themeIcon');
+                const textEl = document.getElementById('themeText');
+                const logoEl = document.getElementById('appLogo');
+                const metaTheme = document.getElementById('metaThemeColor');
+                if (iconEl) iconEl.innerText = '☀️';
+                if (textEl) textEl.innerText = 'Light';
+                if (logoEl) logoEl.src = LOGO_DARK;
+                if (metaTheme) metaTheme.setAttribute('content', '#0f172a');
+            }
+        }
+
         function toggleDarkMode() {
             const isDark = document.body.getAttribute('data-theme') === 'dark';
             const newTheme = isDark ? 'light' : 'dark';
 
             document.body.setAttribute('data-theme', newTheme);
+            localStorage.setItem('ms_theme', newTheme);
             document.getElementById('themeIcon').innerText = isDark ? '🌙' : '☀️';
             document.getElementById('themeText').innerText = isDark ? 'Dark' : 'Light';
 
@@ -48,6 +75,39 @@
             if (document.getElementById('dashboardTab').classList.contains('active')) {
                 updateDashboardAnalytics();
             }
+        }
+
+        function checkAuthSession() {
+            fetch('/api/auth/me', { cache: 'no-store', credentials: 'same-origin' })
+                .then(res => res.ok ? res.json() : null)
+                .then(data => {
+                    if (!data) return;
+                    if (data.authEnabled && !data.authenticated) {
+                        window.location.replace('/login');
+                        return;
+                    }
+                    const userPill = document.getElementById('authUserPill');
+                    const userText = document.getElementById('authUsernameText');
+                    const btnLogout = document.getElementById('btnLogout');
+                    const logoutText = document.getElementById('logoutUserText');
+                    if (data.authEnabled && data.authenticated) {
+                        if (userPill) userPill.style.display = 'inline-flex';
+                        if (userText) userText.innerText = data.username || 'Signed In';
+                        if (btnLogout) btnLogout.style.display = 'inline-flex';
+                        if (logoutText) logoutText.innerText = 'Logout';
+                    } else {
+                        if (userPill) userPill.style.display = 'none';
+                        if (btnLogout) btnLogout.style.display = 'none';
+                    }
+                })
+                .catch(() => {});
+        }
+
+        function logoutUser() {
+            fetch('/api/auth/logout', { method: 'POST' })
+                .finally(() => {
+                    window.location.replace('/login');
+                });
         }
 
 
@@ -82,8 +142,8 @@
 
 
 function escapeHtml(str) {
-    if (!str) return '';
-    return str
+    if (str === null || str === undefined) return '';
+    return String(str)
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")
@@ -98,6 +158,62 @@ function escapeJsString(str) {
         .replace(/'/g, "\\'")
         .replace(/"/g, '&quot;')
         .replace(/\n/g, ' ');
+}
+
+function sanitizeSpreadsheetCell(val) {
+    if (typeof val !== 'string') return val;
+    const trimmed = val.trimStart();
+    if (trimmed && ['=', '+', '-', '@', '\t', '\r'].includes(trimmed[0])) {
+        return "'" + val;
+    }
+    return val;
+}
+
+function sanitizeHtmlFragment(dirtyHtml) {
+    if (!dirtyHtml) return '';
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(String(dirtyHtml), 'text/html');
+    const allowedTags = new Set([
+        'P', 'BR', 'HR', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6',
+        'UL', 'OL', 'LI', 'STRONG', 'B', 'EM', 'I', 'U', 'CODE', 'PRE',
+        'BLOCKQUOTE', 'TABLE', 'THEAD', 'TBODY', 'TR', 'TH', 'TD', 'SPAN', 'DIV', 'A'
+    ]);
+    const allowedAttrs = new Set(['href', 'title', 'colspan', 'rowspan']);
+
+    function cleanNode(node) {
+        const children = Array.from(node.childNodes);
+        for (const child of children) {
+            if (child.nodeType === Node.ELEMENT_NODE) {
+                if (!allowedTags.has(child.tagName)) {
+                    if (['SCRIPT', 'STYLE', 'IFRAME', 'OBJECT', 'EMBED', 'SVG', 'MATH', 'FORM'].includes(child.tagName)) {
+                        child.remove();
+                        continue;
+                    }
+                    // Replace disallowed element with its text content
+                    const textNode = doc.createTextNode(child.textContent || '');
+                    child.replaceWith(textNode);
+                    continue;
+                }
+                for (const attr of Array.from(child.attributes)) {
+                    const name = attr.name.toLowerCase();
+                    const val = (attr.value || '').trim().toLowerCase();
+                    if (!allowedAttrs.has(name)) {
+                        child.removeAttribute(attr.name);
+                    } else if (name === 'href' && !val.startsWith('https://') && !val.startsWith('http://') && !val.startsWith('mailto:')) {
+                        child.removeAttribute(attr.name);
+                    }
+                }
+                if (child.tagName === 'A') {
+                    child.setAttribute('rel', 'noopener noreferrer');
+                    child.setAttribute('target', '_blank');
+                }
+                cleanNode(child);
+            }
+        }
+    }
+
+    cleanNode(doc.body);
+    return doc.body.innerHTML;
 }
 
 
@@ -153,6 +269,7 @@ function escapeJsString(str) {
 
                     updateCustomerDatalist();
                     loadResources();
+                    if (typeof updateContractFormHelper === 'function') updateContractFormHelper('add');
                 })
                 .catch(err => {
                     console.error("Error loading customer config: " + err.message);
@@ -176,6 +293,7 @@ function escapeJsString(str) {
             } else {
                 loadResources();
             }
+            if (typeof updateContractFormHelper === 'function') updateContractFormHelper('add');
         }
 
         function loadResources() {
@@ -320,9 +438,18 @@ document.addEventListener('click', (e) => {
 // Initialize Application
 let isAppInitialized = false;
 function initApp() {
+    applySavedThemePreference();
+    checkAuthSession();
+
+    if (typeof fetchLogs !== 'function' || typeof updateDashboardAnalytics !== 'function') {
+        return;
+    }
+
     if (isAppInitialized) {
-        if (typeof fetchLogs === 'function' && (!allReportLogs || allReportLogs.length === 0)) {
+        if (!allReportLogs || allReportLogs.length === 0) {
             fetchLogs();
+        } else if (typeof customerChartInstance !== 'undefined' && !customerChartInstance) {
+            updateDashboardAnalytics();
         }
         return;
     }
@@ -330,8 +457,9 @@ function initApp() {
 
     if (typeof applyColumnVisibilityStyles === 'function') applyColumnVisibilityStyles();
     if (typeof checkRunningModalTimer === 'function') checkRunningModalTimer();
+    if (typeof loadContractConfig === 'function') loadContractConfig();
     loadCustomers();
-    if (typeof fetchLogs === 'function') fetchLogs();
+    fetchLogs();
     checkSyncStatus();
     setInterval(checkSyncStatus, 15000);
 
@@ -365,12 +493,23 @@ if (document.readyState === 'loading') {
 } else {
     initApp();
 }
+window.addEventListener('load', initApp);
 
-// PWA Service Worker Registration
+// PWA Service Worker Registration & Stale Cache Cleanup
+if ('caches' in window) {
+    caches.keys().then(keys => {
+        keys.forEach(k => {
+            if (k !== 'ms-tracker-v6') caches.delete(k);
+        });
+    }).catch(() => {});
+}
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
         navigator.serviceWorker.register('/sw.js')
-            .then(reg => console.log('✅ PWA Service Worker registered:', reg.scope))
+            .then(reg => {
+                reg.update();
+                console.log('✅ PWA Service Worker registered:', reg.scope);
+            })
             .catch(err => console.warn('⚠️ PWA Service Worker registration failed:', err));
     });
 }

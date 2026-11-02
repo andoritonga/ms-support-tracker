@@ -13,6 +13,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application source code
 COPY . .
 
+# Create non-root user and ensure SQLite data directory is writable
+RUN groupadd -r appuser && useradd -r -g appuser -d /app -s /sbin/nologin appuser \
+    && mkdir -p /app/data \
+    && chown -R appuser:appuser /app
+
+USER appuser
+
 # Expose container port
 EXPOSE 8080
 

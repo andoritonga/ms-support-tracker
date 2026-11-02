@@ -6,9 +6,13 @@
   "compatibility_flags": [
     "nodejs_compat"
   ],
+  "build": {
+    "command": "node build.js"
+  },
   "assets": {
     "directory": "./public",
-    "binding": "ASSETS"
+    "binding": "ASSETS",
+    "run_worker_first": true
   },
   "d1_databases": [
     {
@@ -21,9 +25,5 @@
     "crons": [
       "*/10 * * * *"
     ]
-  },
-  "vars": {
-    "SPREADSHEET_LOGS_ID": "your_activity_logs_spreadsheet_id_here",
-    "SPREADSHEET_CONFIG_ID": "your_customers_config_spreadsheet_id_here"
   }
 }

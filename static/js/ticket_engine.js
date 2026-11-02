@@ -1,21 +1,106 @@
 // ==========================================================================
-// CONTRACT TICKET ENGINE (MSIG & ASJ MANAGED SERVICES CONTRACTS)
+// CONTRACT TICKET ENGINE (MSIG LIFE & ASURANSI SIMAS JIWA CONTRACTS)
 // ==========================================================================
 
 let activeContractClient = 'MSIG'; // Default active contract client tab
 
+let contractConfigCache = {
+    quotas: { MSIG: 50, ASJ: 50 },
+    clients: {
+        MSIG: { code: 'MSIG', label: 'MSIG Life', quota: 50 },
+        ASJ: { code: 'ASJ', label: 'Asuransi Simas Jiwa', quota: 50 }
+    },
+    customerMap: {}
+};
+
+function getContractDisplayName(clientCode) {
+    if (!clientCode) return '';
+    const code = String(clientCode).toUpperCase();
+    if (contractConfigCache && contractConfigCache.clients && contractConfigCache.clients[code]) {
+        return contractConfigCache.clients[code].label || code;
+    }
+    if (code === 'MSIG') return 'MSIG Life';
+    if (code === 'ASJ') return 'Asuransi Simas Jiwa';
+    return code;
+}
+
 function isContractCustomer(customerName) {
     if (!customerName) return false;
-    const upper = customerName.toUpperCase();
-    return upper.includes('MSIG') || upper.includes('ASJ');
+    return getContractClientName(customerName) !== '';
 }
 
 function getContractClientName(customerName) {
     if (!customerName) return '';
-    const upper = customerName.toUpperCase();
-    if (upper.includes('MSIG')) return 'MSIG';
-    if (upper.includes('ASJ')) return 'ASJ';
+    const upper = String(customerName).trim().toUpperCase();
+    if (contractConfigCache && contractConfigCache.customerMap && contractConfigCache.customerMap[upper]) {
+        return contractConfigCache.customerMap[upper];
+    }
+    if (upper.includes('MSIG') || upper.includes('MITSUI SUMITOMO')) return 'MSIG';
+    if (upper.includes('ASJ') || upper.includes('SIMAS JIWA') || upper.includes('ASURANSI SIMAS')) return 'ASJ';
     return '';
+}
+
+function renderContractClientButtons() {
+    const container = document.getElementById('contractClientToggleContainer');
+    if (!container || !contractConfigCache || !contractConfigCache.clients) return;
+    const entries = Object.values(contractConfigCache.clients);
+    if (entries.length === 0) return;
+
+    container.innerHTML = '';
+    entries.forEach(clientObj => {
+        const code = clientObj.code;
+        const label = clientObj.label || code;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn-contract-toggle' + (code === activeContractClient ? ' active' : '');
+        btn.id = `btnContract${code}`;
+        btn.setAttribute('data-client', code);
+        btn.innerText = label;
+        btn.onclick = () => switchContractClient(code);
+        container.appendChild(btn);
+    });
+}
+
+function loadContractConfig() {
+    localStorage.removeItem('contract_quota_ACTIVITIES');
+    fetch('/api/contract-config')
+        .then(res => res.ok ? res.json() : null)
+        .then(data => {
+            if (!data) return;
+            if (data.quotas) {
+                delete data.quotas.ACTIVITIES;
+                contractConfigCache.quotas = Object.assign({ MSIG: 50, ASJ: 50 }, data.quotas);
+            }
+            if (data.clients) {
+                delete data.clients.ACTIVITIES;
+                contractConfigCache.clients = data.clients;
+            }
+            if (data.customerMap) {
+                contractConfigCache.customerMap = data.customerMap;
+            }
+
+            if (!contractConfigCache.clients[activeContractClient]) {
+                activeContractClient = 'MSIG';
+            }
+
+            // Sync server-side quotas into localStorage cache
+            for (const [code, qVal] of Object.entries(contractConfigCache.quotas)) {
+                const num = parseFloat(qVal);
+                if (!isNaN(num) && num > 0) {
+                    localStorage.setItem(`contract_quota_${code}`, num);
+                    if (code === 'MSIG') {
+                        localStorage.setItem('msig_contract_quota', num);
+                    }
+                }
+            }
+
+            renderContractClientButtons();
+
+            if (typeof getDashboardFilteredLogs === 'function') {
+                updateContractQuotaCard(getDashboardFilteredLogs(), activeContractClient);
+            }
+        })
+        .catch(err => console.warn('Could not load contract config:', err));
 }
 
 function calculateContractTicketBurn(item) {
@@ -61,21 +146,22 @@ function calculateContractTicketBurn(item) {
     }
 
     const cat = (item.category || '').toLowerCase();
+    const displayClient = getContractDisplayName(client);
     let typeCode = 'support_zero';
     let typeName = '0 Tkt (Free)';
     let badgeHtml = '<span class="badge-ticket-burn badge-burn-00">⚪ 0 Tkt</span>';
-    let explanation = `Tidak potong kuota tiket (${client} Contract: 0 Tkt)`;
+    let explanation = `Tidak potong kuota tiket (${displayClient} Contract: 0 Tkt)`;
 
     if (deduction >= 1.0) {
         typeCode = (cat === 'issue') ? 'issue' : 'support_full';
         typeName = `${deduction.toFixed(1)} Tkt`;
-        badgeHtml = `<span class="badge-ticket-burn badge-burn-10" title="${client} Contract: Potong ${deduction.toFixed(1)} Tiket">🎫 ${deduction.toFixed(1)} Tkt</span>`;
-        explanation = `Potong kuota tiket ${client} ${deduction.toFixed(1)} Tiket`;
+        badgeHtml = `<span class="badge-ticket-burn badge-burn-10" title="${displayClient} Contract: Potong ${deduction.toFixed(1)} Tiket">🎫 ${deduction.toFixed(1)} Tkt</span>`;
+        explanation = `Potong kuota tiket ${displayClient} ${deduction.toFixed(1)} Tiket`;
     } else if (deduction > 0.0) {
         typeCode = 'support_half';
         typeName = `${deduction.toFixed(1)} Tkt`;
-        badgeHtml = `<span class="badge-ticket-burn badge-burn-05" title="${client} Contract: Potong ${deduction.toFixed(1)} Tiket">🎫 ${deduction.toFixed(1)} Tkt</span>`;
-        explanation = `Potong kuota tiket ${client} ${deduction.toFixed(1)} Tiket`;
+        badgeHtml = `<span class="badge-ticket-burn badge-burn-05" title="${displayClient} Contract: Potong ${deduction.toFixed(1)} Tiket">🎫 ${deduction.toFixed(1)} Tkt</span>`;
+        explanation = `Potong kuota tiket ${displayClient} ${deduction.toFixed(1)} Tiket`;
     }
 
     return {
@@ -129,6 +215,10 @@ function changeTicketDeduction(rowId, val, selectEl) {
 
 function getContractQuotaLimit(client) {
     const c = client || activeContractClient;
+    if (contractConfigCache && contractConfigCache.quotas && contractConfigCache.quotas[c]) {
+        const cachedQ = parseFloat(contractConfigCache.quotas[c]);
+        if (!isNaN(cachedQ) && cachedQ > 0) return cachedQ;
+    }
     const key = c === 'MSIG' ? 'msig_contract_quota' : `contract_quota_${c}`;
     const saved = localStorage.getItem(key);
     return saved ? parseFloat(saved) : 50;
@@ -138,11 +228,19 @@ function saveContractQuotaLimit(client, val) {
     const c = client || activeContractClient;
     const num = parseFloat(val);
     if (!isNaN(num) && num > 0) {
+        if (contractConfigCache && contractConfigCache.quotas) {
+            contractConfigCache.quotas[c] = num;
+        }
         const key = c === 'MSIG' ? 'msig_contract_quota' : `contract_quota_${c}`;
         localStorage.setItem(key, num);
         if (c === 'MSIG') {
             localStorage.setItem('contract_quota_MSIG', num);
         }
+        fetch('/api/contract-config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ client: c, quota: num })
+        }).catch(err => console.warn('Could not persist quota to server:', err));
     }
 }
 
@@ -166,15 +264,15 @@ function saveMsigQuotaLimit() {
 function switchContractClient(client) {
     activeContractClient = client;
 
-    // Update switcher buttons
-    const btnMsig = document.getElementById('btnContractMSIG');
-    const btnAsj = document.getElementById('btnContractASJ');
-    if (btnMsig) btnMsig.classList.toggle('active', client === 'MSIG');
-    if (btnAsj) btnAsj.classList.toggle('active', client === 'ASJ');
+    // Update switcher buttons dynamically
+    document.querySelectorAll('#contractClientToggleContainer .btn-contract-toggle').forEach(btn => {
+        const btnClient = btn.getAttribute('data-client');
+        btn.classList.toggle('active', btnClient === client);
+    });
 
     // Update label next to quota input
     const label = document.getElementById('msigQuotaClientLabel');
-    if (label) label.innerText = `${client} Quota:`;
+    if (label) label.innerText = `${getContractDisplayName(client)} Quota:`;
 
     // Refresh quota card display
     if (typeof getDashboardFilteredLogs === 'function') {
@@ -184,7 +282,7 @@ function switchContractClient(client) {
 
 function updateContractQuotaCard(logs, client) {
     const targetClient = client || activeContractClient;
-    const clientLogs = (logs || []).filter(l => l.customer && l.customer.toUpperCase().includes(targetClient));
+    const clientLogs = (logs || []).filter(l => l.customer && getContractClientName(l.customer) === targetClient);
     const card = document.getElementById('msigQuotaCard');
     if (!card) return;
 
@@ -252,8 +350,11 @@ function updateContractFormHelper(mode) {
     const isAdd = mode === 'add';
     const custEl = document.getElementById(isAdd ? 'customer' : 'editCustomer');
     const catEl = document.getElementById(isAdd ? 'category' : 'editCategory');
+    const clockInEl = document.getElementById(isAdd ? 'clockIn' : 'editClockIn');
+    const clockOutEl = document.getElementById(isAdd ? 'clockOut' : 'editClockOut');
     const helperEl = document.getElementById(isAdd ? 'msigAddHelper' : 'msigEditHelper');
     const titleEl = document.getElementById(isAdd ? 'contractAddHelperTitle' : 'contractEditHelperTitle');
+    const reasonEl = document.getElementById(isAdd ? 'msigAddReasonText' : 'msigEditReasonText');
     const ticketSelect = document.getElementById(isAdd ? 'ticketDeduction' : 'editTicketDeduction');
 
     if (!custEl || !helperEl) return;
@@ -267,15 +368,49 @@ function updateContractFormHelper(mode) {
     }
 
     const client = getContractClientName(custVal);
+    const clientDisplay = getContractDisplayName(client);
     if (titleEl) {
-        titleEl.innerText = `Potong Kuota Tiket ${client}:`;
+        titleEl.innerText = `Potong Kuota Tiket ${clientDisplay}:`;
     }
 
     helperEl.style.display = 'block';
 
+    // Calculate duration if Clock In and Clock Out are filled
+    let durationMins = 0;
+    if (clockInEl && clockOutEl && clockInEl.value && clockOutEl.value) {
+        const t1 = new Date(clockInEl.value).getTime();
+        const t2 = new Date(clockOutEl.value).getTime();
+        if (!isNaN(t1) && !isNaN(t2)) {
+            let diff = Math.round((t2 - t1) / 60000);
+            if (diff < 0) diff += 1440;
+            if (diff > 0) durationMins = diff;
+        }
+    }
+
+    const cat = (catEl ? catEl.value : '').toLowerCase();
+    if (reasonEl) {
+        if (durationMins > 0) {
+            const hrs = Math.floor(durationMins / 60);
+            const mins = durationMins % 60;
+            const durLabel = hrs > 0 ? `${hrs}j ${mins}m` : `${mins}m`;
+            if (cat === 'issue') {
+                reasonEl.innerText = `Durasi: ${durLabel} • Issue = 1.0 Tiket`;
+            } else if (durationMins > 240) {
+                reasonEl.innerText = `Durasi: ${durLabel} (> 4 jam) • Support Changes >4h = 1.0 Tiket`;
+            } else {
+                reasonEl.innerText = `Durasi: ${durLabel} (≤ 4 jam) • Support Changes ≤4h = 0.5 Tiket / Non-Changes = 0 Tiket`;
+            }
+        } else {
+            reasonEl.innerText = cat === 'issue'
+                ? 'Kategori Issue otomatis direkomendasikan 1.0 Tiket'
+                : 'Tentukan kuota tiket (0 / 0.5 / 1.0 Tkt) untuk log ini';
+        }
+    }
+
     if (isAdd && ticketSelect) {
-        const cat = (catEl ? catEl.value : '').toLowerCase();
         if (cat === 'issue') {
+            ticketSelect.value = '1.0';
+        } else if (durationMins > 240 && ticketSelect.value === '0.5') {
             ticketSelect.value = '1.0';
         }
     }

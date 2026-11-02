@@ -3,6 +3,7 @@ import json
 import re
 import time
 import asyncio
+import threading
 from datetime import datetime, date
 from typing import List, Dict, Any, Optional
 import gspread
@@ -21,6 +22,7 @@ SPREADSHEET_CONFIG_ID = os.getenv("SPREADSHEET_CONFIG_ID", "")
 _cached_client = None
 _cached_client_time = 0
 _sync_lock = asyncio.Lock()
+_push_thread_lock = threading.Lock()
 
 INDONESIAN_MONTHS = {
     'jan': 1, 'januari': 1,
@@ -154,7 +156,29 @@ def sync_config_from_sheets():
         sheet_cust = doc.worksheet("Customer_Config")
         records = sheet_cust.get_all_values()
         if records and len(records) > 1:
-            customers = [row[0] for row in records[1:] if row and row[0].strip()]
+            headers = [h.strip().lower() for h in records[0]]
+            quota_idx = next((i for i, h in enumerate(headers) if "quota" in h), -1)
+            code_idx = next((i for i, h in enumerate(headers) if "contract" in h and "quota" not in h), -1)
+            customers = []
+            for row in records[1:]:
+                if row and row[0].strip():
+                    cust_name = row[0].strip()
+                    quota_val = 0.0
+                    code_val = ""
+                    if quota_idx > 0 and len(row) > quota_idx and row[quota_idx].strip():
+                        try:
+                            quota_val = float(row[quota_idx].strip())
+                        except ValueError:
+                            quota_val = 0.0
+                    if code_idx > 0 and len(row) > code_idx and row[code_idx].strip():
+                        raw_code = row[code_idx].strip().upper()
+                        if raw_code not in ("ACTIVITIES", "ACTIVITY_LOG"):
+                            code_val = raw_code
+                    customers.append({
+                        "name": cust_name,
+                        "contract_code": db.infer_contract_code(cust_name) or code_val,
+                        "contract_quota": quota_val
+                    })
             db.bulk_set_customers(customers)
 
         # 2. Resources
@@ -229,6 +253,20 @@ def pull_activities_from_sheets():
             raw_duration = get_val(row, "Duration")
             status = get_val(row, "Status") or "In Progress"
             remarks = get_val(row, "Remarks")
+            raw_deduction = (
+                get_val(row, "Ticket Deduction")
+                or get_val(row, "TicketDeduction")
+                or get_val(row, "Ticket Quota")
+                or (row[15] if len(row) > 15 else "")
+            )
+            has_sheet_deduction = False
+            sheet_deduction_val = 0.0
+            if str(raw_deduction).strip() != "":
+                try:
+                    sheet_deduction_val = float(str(raw_deduction).strip())
+                    has_sheet_deduction = True
+                except ValueError:
+                    pass
 
             if not raw_date and raw_clock_in:
                 raw_date = raw_clock_in
@@ -261,7 +299,9 @@ def pull_activities_from_sheets():
                 "status": status,
                 "remarks": remarks,
                 "duration": duration_str,
-                "durationMinutes": duration_mins
+                "durationMinutes": duration_mins,
+                "hasSheetDeduction": has_sheet_deduction,
+                "ticketDeduction": sheet_deduction_val
             })
 
         count = db.sync_activities_from_sheets(items)
@@ -271,93 +311,144 @@ def pull_activities_from_sheets():
         return count
     except Exception as e:
         print(f"⚠️ Error pulling activities from Sheets: {e}")
-        db.set_sync_meta("last_sync_error", str(e)[:300])
+        db.set_sync_meta("last_sync_error", "Failed to pull activities from Google Sheets.")
         return 0
+
+def sanitize_sheet_cell(val: Any) -> Any:
+    """Prevent spreadsheet formula injection when writing user strings to Google Sheets."""
+    if not isinstance(val, str):
+        return val
+    stripped = val.lstrip()
+    if stripped and stripped[0] in ("=", "+", "-", "@", "\t", "\r"):
+        return f"'{val}"
+    return val
 
 def push_pending_to_sheets():
-    """Push pending local changes (inserts, updates, deletes) to Google Sheets"""
-    pending = db.get_pending_sync_activities()
-    if not pending:
-        return 0
-
-    try:
-        sheet = get_logs_sheet()
-    except Exception as e:
-        print(f"⚠️ Cannot connect to Google Sheets to push changes: {e}")
-        db.set_sync_meta("last_sync_error", str(e)[:300])
-        return 0
-
-    synced_count = 0
-    for item in pending:
-        item_id = item["id"]
-        status = item["sync_status"]
-        sheet_row = item["sheet_row"]
+    """Push pending local changes (inserts, updates, deletes) to Google Sheets with row-shift protection"""
+    with _push_thread_lock:
+        pending = db.get_pending_sync_activities()
+        if not pending:
+            return 0
 
         try:
-            if status == "pending_insert":
-                row_data = [
-                    item["uuid"],
-                    item["customer"],
-                    item["date"],
-                    item["raised_by"],
-                    item["services"],
-                    item["category"],
-                    item["project"],
-                    item["task_description"],
-                    item["root_cause"],
-                    item["solution"],
-                    item["clock_in"],
-                    item["clock_out"],
-                    item["duration"] or "00:00",
-                    item["status"],
-                    item["remarks"]
-                ]
-                sheet.append_row(row_data)
-                # Calculate sheet row
-                all_rows = sheet.get_all_values()
-                new_row_idx = len(all_rows)
-                db.mark_as_synced(item_id, sheet_row=new_row_idx)
-                synced_count += 1
+            sheet = get_logs_sheet()
+        except Exception as e:
+            print(f"⚠️ Cannot connect to Google Sheets to push changes: {e}")
+            db.set_sync_meta("last_sync_error", "Unable to connect to Google Sheets service.")
+            return 0
 
-            elif status == "pending_update":
-                if sheet_row and sheet_row > 1:
-                    row_values = [
-                        item["customer"],
-                        item["date"],
-                        item["raised_by"],
-                        item["services"],
-                        item["category"],
-                        item["project"],
-                        item["task_description"],
-                        item["root_cause"],
-                        item["solution"],
-                        item["clock_in"],
-                        item["clock_out"],
-                        item["duration"] or "00:00",
-                        item["status"],
-                        item["remarks"]
+        # Build UUID -> row index map once if there are updates or deletes
+        uuid_to_row: Dict[str, int] = {}
+        has_updates_or_deletes = any(p["sync_status"] in ("pending_update", "pending_delete") for p in pending)
+        if has_updates_or_deletes:
+            try:
+                col_a = sheet.col_values(1)
+                for idx, val in enumerate(col_a, start=1):
+                    if idx > 1 and val and str(val).strip():
+                        uuid_to_row[str(val).strip()] = idx
+            except Exception as e:
+                print(f"⚠️ Warning: could not pre-fetch UUID column for row lookup: {e}")
+
+        inserts_and_updates = [p for p in pending if p["sync_status"] in ("pending_insert", "pending_update")]
+        deletes = [p for p in pending if p["sync_status"] == "pending_delete"]
+
+        synced_count = 0
+
+        # 1. Process inserts and updates first
+        for item in inserts_and_updates:
+            item_id = item["id"]
+            status = item["sync_status"]
+            item_uuid = str(item.get("uuid") or "").strip()
+            target_row = uuid_to_row.get(item_uuid) or item["sheet_row"]
+
+            try:
+                deduction_cell = float(item.get("ticket_deduction") or 0.0)
+                sheet_deduction = deduction_cell if (deduction_cell > 0 or db.is_contract_customer(item.get("customer"))) else ""
+                if status == "pending_insert":
+                    row_data = [
+                        sanitize_sheet_cell(item["uuid"]),
+                        sanitize_sheet_cell(item["customer"]),
+                        sanitize_sheet_cell(item["date"]),
+                        sanitize_sheet_cell(item["raised_by"]),
+                        sanitize_sheet_cell(item["services"]),
+                        sanitize_sheet_cell(item["category"]),
+                        sanitize_sheet_cell(item["project"]),
+                        sanitize_sheet_cell(item["task_description"]),
+                        sanitize_sheet_cell(item["root_cause"]),
+                        sanitize_sheet_cell(item["solution"]),
+                        sanitize_sheet_cell(item["clock_in"]),
+                        sanitize_sheet_cell(item["clock_out"]),
+                        sanitize_sheet_cell(item["duration"] or "00:00"),
+                        sanitize_sheet_cell(item["status"]),
+                        sanitize_sheet_cell(item["remarks"]),
+                        sheet_deduction
                     ]
-                    cell_range = f"B{sheet_row}:O{sheet_row}"
-                    sheet.update(cell_range, [row_values])
-                    db.mark_as_synced(item_id)
+                    res = sheet.append_row(row_data, value_input_option="RAW")
+                    new_row_idx = None
+                    if isinstance(res, dict):
+                        updated_range = res.get("updates", {}).get("updatedRange", "")
+                        m = re.search(r"A(\d+):", updated_range)
+                        if m:
+                            new_row_idx = int(m.group(1))
+                    if new_row_idx and item_uuid:
+                        uuid_to_row[item_uuid] = new_row_idx
+                    db.mark_as_synced(item_id, sheet_row=new_row_idx)
                     synced_count += 1
-                else:
-                    db.mark_as_synced(item_id)
 
-            elif status == "pending_delete":
-                if sheet_row and sheet_row > 1:
-                    sheet.delete_rows(sheet_row)
+                elif status == "pending_update":
+                    if target_row and target_row > 1:
+                        row_values = [
+                            sanitize_sheet_cell(item["customer"]),
+                            sanitize_sheet_cell(item["date"]),
+                            sanitize_sheet_cell(item["raised_by"]),
+                            sanitize_sheet_cell(item["services"]),
+                            sanitize_sheet_cell(item["category"]),
+                            sanitize_sheet_cell(item["project"]),
+                            sanitize_sheet_cell(item["task_description"]),
+                            sanitize_sheet_cell(item["root_cause"]),
+                            sanitize_sheet_cell(item["solution"]),
+                            sanitize_sheet_cell(item["clock_in"]),
+                            sanitize_sheet_cell(item["clock_out"]),
+                            sanitize_sheet_cell(item["duration"] or "00:00"),
+                            sanitize_sheet_cell(item["status"]),
+                            sanitize_sheet_cell(item["remarks"]),
+                            sheet_deduction
+                        ]
+                        cell_range = f"B{target_row}:P{target_row}"
+                        sheet.update(cell_range, [row_values], value_input_option="RAW")
+                        db.mark_as_synced(item_id, sheet_row=target_row)
+                        synced_count += 1
+                    else:
+                        db.mark_as_synced(item_id)
+
+            except Exception as e:
+                print(f"⚠️ Error syncing item ID {item_id}: {e}")
+                db.mark_sync_error(item_id, "Failed to synchronize record with Google Sheets.")
+
+        # 2. Process deletes in DESCENDING sheet_row order so row deletions never shift subsequent targets
+        deletes_with_rows = []
+        for item in deletes:
+            item_uuid = str(item.get("uuid") or "").strip()
+            resolved_row = uuid_to_row.get(item_uuid) or item.get("sheet_row") or 0
+            deletes_with_rows.append((int(resolved_row), item))
+
+        deletes_with_rows.sort(key=lambda x: x[0], reverse=True)
+
+        for target_row, item in deletes_with_rows:
+            item_id = item["id"]
+            try:
+                if target_row and target_row > 1:
+                    sheet.delete_rows(target_row)
                 db.remove_deleted_activity(item_id)
                 synced_count += 1
+            except Exception as e:
+                print(f"⚠️ Error deleting item ID {item_id} from Sheets: {e}")
+                db.mark_sync_error(item_id, "Failed to delete record from Google Sheets.")
 
-        except Exception as e:
-            print(f"⚠️ Error syncing item ID {item_id}: {e}")
-            db.mark_sync_error(item_id, str(e))
+        if synced_count > 0:
+            db.set_sync_meta("last_push_time", datetime.now().isoformat())
 
-    if synced_count > 0:
-        db.set_sync_meta("last_push_time", datetime.now().isoformat())
-
-    return synced_count
+        return synced_count
 
 async def full_sync_cycle():
     """Async wrapper for push pending and periodic pull"""

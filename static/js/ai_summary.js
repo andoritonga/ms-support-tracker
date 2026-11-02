@@ -5,12 +5,18 @@
         let currentAISummaryMarkdown = "";
 
         function getStoredGeminiApiKey() {
-            return localStorage.getItem('ms_gemini_api_key') || '';
+            const legacy = localStorage.getItem('ms_gemini_api_key');
+            if (legacy) {
+                sessionStorage.setItem('ms_gemini_api_key', legacy);
+                localStorage.removeItem('ms_gemini_api_key');
+            }
+            return sessionStorage.getItem('ms_gemini_api_key') || '';
         }
 
         function saveGeminiApiKey(key) {
             if (key !== null) {
-                localStorage.setItem('ms_gemini_api_key', key.trim());
+                localStorage.removeItem('ms_gemini_api_key');
+                sessionStorage.setItem('ms_gemini_api_key', key.trim());
             }
         }
 
@@ -91,11 +97,12 @@
                 const data = await response.json();
                 currentAISummaryMarkdown = data.summary || "No summary generated.";
 
-                // Render markdown with marked.js or fallback
+                // Render markdown with marked.js + HTML sanitization or escaped fallback
                 if (window.marked && typeof window.marked.parse === 'function') {
-                    bodyEl.innerHTML = window.marked.parse(currentAISummaryMarkdown);
+                    const parsed = window.marked.parse(currentAISummaryMarkdown);
+                    bodyEl.innerHTML = typeof sanitizeHtmlFragment === 'function' ? sanitizeHtmlFragment(parsed) : escapeHtml(currentAISummaryMarkdown);
                 } else {
-                    bodyEl.innerHTML = `<pre style="white-space: pre-wrap; font-family: inherit;">${currentAISummaryMarkdown}</pre>`;
+                    bodyEl.innerHTML = `<pre style="white-space: pre-wrap; font-family: inherit;">${escapeHtml(currentAISummaryMarkdown)}</pre>`;
                 }
 
                 if (btnCopy) btnCopy.style.display = 'inline-flex';
@@ -106,7 +113,7 @@
                     <div style="padding: 24px; text-align: center; color: #ef4444;">
                         <span style="font-size: 2.2rem; display: block; margin-bottom: 8px;">⚠️</span>
                         <h4>Gemini AI Generation Failed</h4>
-                        <p style="font-size: 13px; margin: 8px 0 16px; color: var(--muted);">${err.message}</p>
+                        <p style="font-size: 13px; margin: 8px 0 16px; color: var(--muted);">${escapeHtml(err.message)}</p>
                         <p style="font-size: 12px; color: var(--muted);">Tip: Enter your Gemini API Key in the field above or set <code>GEMINI_API_KEY</code> in the server <code>.env</code> file.</p>
                     </div>
                 `;
@@ -202,7 +209,7 @@
         function printAISummary() {
             const bodyEl = document.getElementById('aiSummaryBody');
             if (!bodyEl) return;
-            const contentHtml = bodyEl.innerHTML;
+            const contentHtml = typeof sanitizeHtmlFragment === 'function' ? sanitizeHtmlFragment(bodyEl.innerHTML) : escapeHtml(bodyEl.innerText);
             const periodText = document.getElementById('aiPeriodBadge') ? document.getElementById('aiPeriodBadge').innerText : '';
 
             const printWindow = window.open('', '_blank');
@@ -212,7 +219,8 @@
                 <head>
                     <title>Gemini AI Executive Support Summary</title>
                     <style>
-                        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 40px; color: #1e293b; line-height: 1.6; }
+                        @page { size: A4 landscape; margin: 12mm; }
+                        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 40px; color: #1e293b; line-height: 1.6; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
                         h1, h2, h3 { color: #2434a4; }
                         h2 { border-bottom: 2px solid #e2e8f0; padding-bottom: 6px; margin-top: 24px; }
                         table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13px; }
@@ -227,7 +235,7 @@
                 <body>
                     <div style="border-bottom: 2px solid #2434a4; padding-bottom: 12px; margin-bottom: 20px;">
                         <h1 style="margin: 0; font-size: 22px;">Executive Operations & Support Briefing</h1>
-                        <p style="margin: 4px 0 0; color: #64748b; font-size: 13px;">${periodText} | Synthesized by Google Gemini AI</p>
+                        <p style="margin: 4px 0 0; color: #64748b; font-size: 13px;">${escapeHtml(periodText)} | Synthesized by Google Gemini AI</p>
                     </div>
                     ${contentHtml}
                     <script>

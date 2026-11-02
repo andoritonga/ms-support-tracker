@@ -7,31 +7,274 @@
 // === HELPERS & UTILITIES ===
 // ==========================================
 
+const SECURITY_HEADERS = {
+  "X-Content-Type-Options": "nosniff",
+  "X-Frame-Options": "DENY",
+  "Referrer-Policy": "strict-origin-when-cross-origin",
+  "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+  "Content-Security-Policy":
+    "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net; frame-ancestors 'none'; base-uri 'self';"
+};
+
+const workerRateLimitBuckets = new Map();
+let lastWorkerRateLimitPrune = 0;
+
+function pruneWorkerRateLimits(now, maxWindowMs = 900000) {
+  if (workerRateLimitBuckets.size < 500 && (now - lastWorkerRateLimitPrune) < 300000) {
+    return;
+  }
+  lastWorkerRateLimitPrune = now;
+  for (const [key, tsList] of workerRateLimitBuckets.entries()) {
+    if (!tsList || tsList.length === 0 || (now - tsList[tsList.length - 1]) > maxWindowMs) {
+      workerRateLimitBuckets.delete(key);
+    }
+  }
+}
+
+function getClientIp(request) {
+  return (
+    request.headers.get("CF-Connecting-IP") ||
+    (request.headers.get("X-Forwarded-For") || "").split(",")[0].trim() ||
+    "unknown"
+  );
+}
+
+function checkWorkerRateLimit(bucketKey, maxRequests, windowMs) {
+  const now = Date.now();
+  pruneWorkerRateLimits(now);
+  let timestamps = workerRateLimitBuckets.get(bucketKey) || [];
+  timestamps = timestamps.filter(ts => now - ts < windowMs);
+  if (timestamps.length >= maxRequests) {
+    workerRateLimitBuckets.set(bucketKey, timestamps);
+    return false;
+  }
+  timestamps.push(now);
+  workerRateLimitBuckets.set(bucketKey, timestamps);
+  return true;
+}
+
 function jsonResponse(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
       "Content-Type": "application/json; charset=utf-8",
+      ...SECURITY_HEADERS,
       ...headers
     }
   });
 }
 
-function checkBasicAuth(request, env) {
-  const username = env.AUTH_USERNAME ? env.AUTH_USERNAME.trim() : "";
-  const password = env.AUTH_PASSWORD ? env.AUTH_PASSWORD.trim() : "";
-  if (!username || !password) return true;
-
-  const authHeader = request.headers.get("Authorization");
-  if (!authHeader || !authHeader.startsWith("Basic ")) return false;
-
-  try {
-    const creds = atob(authHeader.slice(6));
-    const [u, p] = creds.split(":");
-    return u === username && p === password;
-  } catch {
-    return false;
+async function constantTimeEqual(a, b) {
+  const enc = new TextEncoder();
+  const [hashA, hashB] = await Promise.all([
+    crypto.subtle.digest("SHA-256", enc.encode(String(a))),
+    crypto.subtle.digest("SHA-256", enc.encode(String(b)))
+  ]);
+  const viewA = new Uint8Array(hashA);
+  const viewB = new Uint8Array(hashB);
+  if (typeof crypto.subtle.timingSafeEqual === "function") {
+    return crypto.subtle.timingSafeEqual(viewA, viewB) && String(a).length === String(b).length;
   }
+  let diff = String(a).length ^ String(b).length;
+  for (let i = 0; i < viewA.length; i++) {
+    diff |= viewA[i] ^ viewB[i];
+  }
+  return diff === 0;
+}
+
+const SESSION_COOKIE_NAME = "ms_session";
+const SESSION_TTL_REMEMBER = 30 * 86400; // 30 days
+const SESSION_TTL_DEFAULT = 24 * 3600;   // 24 hours
+
+export function getAuthConfig(env) {
+  const username = env.AUTH_USERNAME ? String(env.AUTH_USERNAME).trim() : "";
+  const password = env.AUTH_PASSWORD ? String(env.AUTH_PASSWORD).trim() : "";
+  const authUsersRaw = env.AUTH_USERS ? String(env.AUTH_USERS).trim() : "";
+  const authRequired = ["1", "true", "yes"].includes(String(env.AUTH_REQUIRED || "").trim().toLowerCase());
+
+  if (Boolean(username) !== Boolean(password)) {
+    return { users: {}, authEnabled: true, misconfigured: true };
+  }
+  const users = {};
+  if (username && password) {
+    users[username] = password;
+  }
+  if (authUsersRaw) {
+    for (const part of authUsersRaw.split(",")) {
+      const sep = part.indexOf(":");
+      if (sep !== -1) {
+        const u = part.slice(0, sep).trim();
+        const p = part.slice(sep + 1).trim();
+        if (u && p) users[u] = p;
+      }
+    }
+  }
+  const hasUsers = Object.keys(users).length > 0;
+  if (!hasUsers) {
+    return { users: {}, authEnabled: authRequired, misconfigured: authRequired };
+  }
+  return { users, authEnabled: true, misconfigured: false };
+}
+
+async function getSigningHmacKey(env, users) {
+  const enc = new TextEncoder();
+  let secretStr = env.AUTH_SECRET ? String(env.AUTH_SECRET).trim() : "";
+  if (!secretStr) {
+    const sortedPairs = Object.entries(users)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([u, p]) => `${u}:${p}`)
+      .join("|");
+    secretStr = `${sortedPairs}|ms-tracker-hmac-v1`;
+  }
+  return await crypto.subtle.importKey(
+    "raw",
+    enc.encode(secretStr),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign", "verify"]
+  );
+}
+
+async function createWorkerSessionToken(username, ttlSeconds, env, users) {
+  const now = Math.floor(Date.now() / 1000);
+  const payloadStr = JSON.stringify({ u: username, iat: now, exp: now + ttlSeconds });
+  const payloadB64 = base64UrlEncode(payloadStr);
+  const key = await getSigningHmacKey(env, users);
+  const sigBuf = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payloadB64));
+  const sigB64 = arrayBufferToBase64Url(sigBuf);
+  return `${payloadB64}.${sigB64}`;
+}
+
+async function verifyWorkerSessionToken(token, env, users) {
+  if (!token || !token.includes(".") || !users || Object.keys(users).length === 0) return null;
+  try {
+    const [payloadB64, sigB64] = token.split(".", 2);
+    const key = await getSigningHmacKey(env, users);
+    const expectedSigBuf = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payloadB64));
+    const expectedSigB64 = arrayBufferToBase64Url(expectedSigBuf);
+    if (!(await constantTimeEqual(sigB64, expectedSigB64))) return null;
+    const pad = "=".repeat((4 - (payloadB64.length % 4)) % 4);
+    const jsonStr = atob(payloadB64.replace(/-/g, "+").replace(/_/g, "/") + pad);
+    const payload = JSON.parse(jsonStr);
+    const now = Math.floor(Date.now() / 1000);
+    if (!payload || Number(payload.exp || 0) <= now) return null;
+    const u = String(payload.u || "");
+    if (!Object.prototype.hasOwnProperty.call(users, u)) return null;
+    return u;
+  } catch {
+    return null;
+  }
+}
+
+function getCookieValue(request, name) {
+  const cookieHeader = request.headers.get("Cookie") || "";
+  for (const part of cookieHeader.split(";")) {
+    const idx = part.indexOf("=");
+    if (idx !== -1) {
+      const k = part.slice(0, idx).trim();
+      if (k === name) return part.slice(idx + 1).trim();
+    }
+  }
+  return null;
+}
+
+async function verifyUserCredentials(username, password, users) {
+  let matched = null;
+  for (const [cfgUser, cfgPass] of Object.entries(users)) {
+    const [uOk, pOk] = await Promise.all([
+      constantTimeEqual(username, cfgUser),
+      constantTimeEqual(password, cfgPass)
+    ]);
+    if (uOk && pOk) matched = cfgUser;
+  }
+  return matched;
+}
+
+export async function getAuthenticatedUser(request, env) {
+  const { users, authEnabled, misconfigured } = getAuthConfig(env);
+  if (misconfigured) return null;
+  if (!authEnabled) return "anonymous";
+
+  // 1. Check signed HttpOnly session cookie
+  const cookieToken = getCookieValue(request, SESSION_COOKIE_NAME);
+  if (cookieToken) {
+    const cookieUser = await verifyWorkerSessionToken(cookieToken, env, users);
+    if (cookieUser) return cookieUser;
+  }
+
+  // 2. Fallback to HTTP Basic Auth header
+  const authHeader = request.headers.get("Authorization");
+  if (authHeader && authHeader.startsWith("Basic ")) {
+    const clientIp = getClientIp(request);
+    if (!checkWorkerRateLimit(`auth_attempt:${clientIp}`, 20, 15 * 60 * 1000)) {
+      return null;
+    }
+    try {
+      const creds = atob(authHeader.slice(6));
+      const sepIdx = creds.indexOf(":");
+      if (sepIdx !== -1) {
+        const u = creds.slice(0, sepIdx);
+        const p = creds.slice(sepIdx + 1);
+        const matched = await verifyUserCredentials(u, p, users);
+        if (matched) return matched;
+      }
+    } catch {}
+  }
+
+  return null;
+}
+
+export async function checkBasicAuth(request, env) {
+  const user = await getAuthenticatedUser(request, env);
+  return Boolean(user);
+}
+
+function sanitizeSheetCell(val) {
+  if (typeof val !== "string") return val;
+  const trimmed = val.trimStart();
+  if (trimmed && ["=", "+", "-", "@", "\t", "\r"].includes(trimmed[0])) {
+    return `'${val}`;
+  }
+  return val;
+}
+
+function validateActivityInput(data) {
+  if (!data || typeof data !== "object") {
+    return "Invalid JSON payload.";
+  }
+  const strFields = [
+    ["customer", 200, true],
+    ["date", 40, true],
+    ["raisedBy", 200, false],
+    ["services", 200, true],
+    ["category", 100, true],
+    ["project", 200, false],
+    ["taskDescription", 5000, true],
+    ["rootCause", 5000, false],
+    ["solution", 5000, false],
+    ["clockIn", 64, false],
+    ["clockOut", 64, false],
+    ["remarks", 2000, false]
+  ];
+  for (const [field, maxLen, required] of strFields) {
+    const val = data[field];
+    if (required && (!val || typeof val !== "string" || !val.trim())) {
+      return `Field '${field}' is required.`;
+    }
+    if (val !== undefined && val !== null && String(val).length > maxLen) {
+      return `Field '${field}' exceeds maximum length (${maxLen}).`;
+    }
+  }
+  if (data.status && !["In Progress", "Closed"].includes(data.status)) {
+    return "Invalid status value.";
+  }
+  if (data.ticketDeduction !== undefined && data.ticketDeduction !== null) {
+    const num = Number(data.ticketDeduction);
+    if (isNaN(num) || num < 0 || num > 100) {
+      return "Invalid ticketDeduction value.";
+    }
+  }
+  return null;
 }
 
 function parseTimeToMinutes(timeVal) {
@@ -253,14 +496,15 @@ async function fetchSheetValues(spreadsheetId, range, token) {
 }
 
 async function appendSheetValues(spreadsheetId, range, values, token) {
-  const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}:append?valueInputOption=USER_ENTERED`;
+  const safeValues = (values || []).map(sanitizeSheetCell);
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}:append?valueInputOption=RAW`;
   const res = await fetch(url, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json"
     },
-    body: JSON.stringify({ values: [values] })
+    body: JSON.stringify({ values: [safeValues] })
   });
   if (!res.ok) {
     const err = await res.text();
@@ -270,14 +514,15 @@ async function appendSheetValues(spreadsheetId, range, values, token) {
 }
 
 async function updateSheetValues(spreadsheetId, range, values, token) {
-  const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`;
+  const safeValues = (values || []).map(sanitizeSheetCell);
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}?valueInputOption=RAW`;
   const res = await fetch(url, {
     method: "PUT",
     headers: {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json"
     },
-    body: JSON.stringify({ values: [values] })
+    body: JSON.stringify({ values: [safeValues] })
   });
   if (!res.ok) {
     const err = await res.text();
@@ -375,6 +620,8 @@ const D1_SCHEMA_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS config_customers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT UNIQUE NOT NULL,
+    contract_code TEXT DEFAULT '',
+    contract_quota REAL DEFAULT 0.0,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   )`,
   `CREATE TABLE IF NOT EXISTS config_resources (
@@ -390,8 +637,34 @@ const D1_SCHEMA_STATEMENTS = [
     key TEXT PRIMARY KEY,
     value TEXT,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-  )`
+  )`,
+  `UPDATE activities
+   SET ticket_deduction = 1.0
+   WHERE (
+     UPPER(customer) LIKE '%MSIG%'
+     OR UPPER(customer) LIKE '%MITSUI SUMITOMO%'
+     OR UPPER(customer) LIKE '%ASJ%'
+     OR UPPER(customer) LIKE '%SIMAS JIWA%'
+     OR UPPER(customer) LIKE '%ASURANSI SIMAS%'
+   )
+   AND LOWER(TRIM(category)) = 'issue'
+   AND (ticket_deduction IS NULL OR ticket_deduction = 0.0)
+   AND NOT EXISTS (SELECT 1 FROM sync_meta WHERE key = 'migration_contract_fullname_v1')`,
+  `INSERT OR IGNORE INTO sync_meta (key, value, updated_at)
+   VALUES ('migration_contract_fullname_v1', '1', CURRENT_TIMESTAMP)`
 ];
+
+function inferContractCode(customer) {
+  if (!customer) return "";
+  const upper = String(customer).toUpperCase();
+  if (upper.includes("MSIG") || upper.includes("MITSUI SUMITOMO")) return "MSIG";
+  if (upper.includes("ASJ") || upper.includes("SIMAS JIWA") || upper.includes("ASURANSI SIMAS")) return "ASJ";
+  return "";
+}
+
+function isContractCustomerName(customer) {
+  return inferContractCode(customer) !== "";
+}
 
 let schemaInitialized = false;
 async function ensureD1Schema(db) {
@@ -399,6 +672,12 @@ async function ensureD1Schema(db) {
   try {
     const batch = D1_SCHEMA_STATEMENTS.map(sql => db.prepare(sql));
     await db.batch(batch);
+    try {
+      await db.prepare("ALTER TABLE config_customers ADD COLUMN contract_code TEXT DEFAULT ''").run();
+    } catch {}
+    try {
+      await db.prepare("ALTER TABLE config_customers ADD COLUMN contract_quota REAL DEFAULT 0.0").run();
+    } catch {}
     schemaInitialized = true;
   } catch (err) {
     console.warn("Failed to auto-ensure D1 schema:", err);
@@ -577,7 +856,9 @@ async function updateActivityTicketDeduction(db, activityId, deduction) {
   const val = parseFloat(deduction || 0.0) || 0.0;
   await db.prepare(`
     UPDATE activities SET
-      ticket_deduction = ?, updated_at = CURRENT_TIMESTAMP
+      ticket_deduction = ?,
+      sync_status = CASE WHEN sync_status = 'pending_insert' THEN 'pending_insert' ELSE 'pending_update' END,
+      updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
   `).bind(val, activityId).run();
   invalidateActivitiesCache();
@@ -607,6 +888,73 @@ async function getCachedCustomers(db) {
     memCustomersCacheTime = now;
   }
   return list;
+}
+
+async function getContractConfig(db) {
+  let custRows = [];
+  let metaRows = [];
+  try {
+    const resCust = await db.prepare("SELECT name, contract_code, contract_quota FROM config_customers ORDER BY name ASC").all();
+    custRows = resCust.results || [];
+  } catch {
+    const resCustFallback = await db.prepare("SELECT name FROM config_customers ORDER BY name ASC").all();
+    custRows = resCustFallback.results || [];
+  }
+  try {
+    const resMeta = await db.prepare("SELECT key, value FROM sync_meta WHERE key LIKE 'contract_quota_%'").all();
+    metaRows = resMeta.results || [];
+  } catch {}
+
+  const quotas = { MSIG: 50.0, ASJ: 50.0 };
+  for (const m of metaRows) {
+    const code = String(m.key || "").replace("contract_quota_", "").trim().toUpperCase();
+    if (!code || code === "ACTIVITIES" || code === "ACTIVITY_LOG") continue;
+    const val = parseFloat(m.value);
+    if (!isNaN(val) && val > 0) {
+      quotas[code] = val;
+    }
+  }
+
+  const clients = {
+    MSIG: { code: "MSIG", label: "MSIG Life", quota: quotas.MSIG || 50.0 },
+    ASJ: { code: "ASJ", label: "Asuransi Simas Jiwa", quota: quotas.ASJ || 50.0 }
+  };
+  const customerMap = {};
+
+  for (const r of custRows) {
+    const name = String(r.name || "").trim();
+    const inferred = inferContractCode(name);
+    let rawCode = String(r.contract_code || "").trim().toUpperCase();
+    if (rawCode === "ACTIVITIES" || rawCode === "ACTIVITY_LOG") rawCode = "";
+    const code = inferred || rawCode;
+    const q = parseFloat(r.contract_quota || 0.0) || 0.0;
+    if (code) {
+      customerMap[name.toUpperCase()] = code;
+      if (q > 1 && quotas[code] === undefined) {
+        quotas[code] = q;
+      }
+      if (!clients[code]) {
+        clients[code] = { code, label: name, quota: quotas[code] || (q > 1 ? q : 50.0) };
+      } else {
+        clients[code].quota = quotas[code] || (q > 1 ? q : clients[code].quota);
+      }
+    }
+  }
+
+  return { quotas, clients, customerMap };
+}
+
+async function saveContractQuota(db, client, quota) {
+  const code = String(client || "").trim().toUpperCase();
+  if (!code) return await getContractConfig(db);
+  const qVal = Math.max(1.0, parseFloat(quota || 50.0) || 50.0);
+  await setSyncMeta(db, `contract_quota_${code}`, String(qVal));
+  try {
+    await db.prepare(
+      "UPDATE config_customers SET contract_quota = ?, updated_at = CURRENT_TIMESTAMP WHERE UPPER(contract_code) = ?"
+    ).bind(qVal, code).run();
+  } catch {}
+  return await getContractConfig(db);
 }
 
 async function getCachedResources(db, customer) {
@@ -654,14 +1002,34 @@ async function getCachedResources(db, customer) {
 }
 
 async function searchKnowledgeBase(db, query, customer, service, limit = 6) {
-  const { results } = await db.prepare(`
+  const keywords = String(query || "")
+    .slice(0, 200)
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(w => w.length >= 2)
+    .slice(0, 6);
+
+  let sql = `
     SELECT id, customer, date, services, category, project, task_description, root_cause, solution, duration, status
     FROM activities
     WHERE (root_cause != '' OR solution != '')
       AND sync_status != 'pending_delete'
-  `).all();
+  `;
+  const bindParams = [];
+  if (keywords.length > 0) {
+    const likeClauses = [];
+    for (const kw of keywords) {
+      const escapedKw = kw.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
+      likeClauses.push("(LOWER(task_description) LIKE ? ESCAPE '\\' OR LOWER(root_cause) LIKE ? ESCAPE '\\' OR LOWER(solution) LIKE ? ESCAPE '\\')");
+      bindParams.push(`%${escapedKw}%`, `%${escapedKw}%`, `%${escapedKw}%`);
+    }
+    sql += " AND (" + likeClauses.join(" OR ") + ")";
+  }
+  sql += " ORDER BY id DESC LIMIT 250";
 
-  const keywords = (query || "").toLowerCase().split(/\s+/).filter(w => w.length >= 2);
+  const stmt = db.prepare(sql);
+  const { results } = bindParams.length > 0 ? await stmt.bind(...bindParams).all() : await stmt.all();
+
   const scored = [];
 
   for (const r of results || []) {
@@ -732,14 +1100,42 @@ async function syncConfigFromSheets(env) {
 
   // 1. Customers
   try {
-    const custRows = await fetchSheetValues(env.SPREADSHEET_CONFIG_ID, "Customer_Config!A:A", token);
+    const custRows = await fetchSheetValues(env.SPREADSHEET_CONFIG_ID, "Customer_Config!A:C", token);
     if (custRows && custRows.length > 1) {
+      const headers = (custRows[0] || []).map(h => String(h || "").trim().toLowerCase());
+      const quotaIdx = headers.findIndex(h => h.includes("quota"));
+      const codeIdx = headers.findIndex(h => h.includes("contract") && !h.includes("quota"));
+
       await env.DB.prepare("DELETE FROM config_customers").run();
       const stmts = [];
       for (const row of custRows.slice(1)) {
         const name = (row[0] || "").trim();
         if (name) {
-          stmts.push(env.DB.prepare("INSERT OR IGNORE INTO config_customers (name) VALUES (?)").bind(name));
+          let quotaVal = 0.0;
+          let codeVal = "";
+          if (quotaIdx > 0 && row.length > quotaIdx && String(row[quotaIdx] || "").trim()) {
+            const p = parseFloat(String(row[quotaIdx]).trim());
+            if (!isNaN(p) && p > 0) quotaVal = p;
+          }
+          if (codeIdx > 0 && row.length > codeIdx && String(row[codeIdx] || "").trim()) {
+            const rawCode = String(row[codeIdx]).trim().toUpperCase();
+            if (rawCode !== "ACTIVITIES" && rawCode !== "ACTIVITY_LOG") {
+              codeVal = rawCode;
+            }
+          }
+          const finalCode = inferContractCode(name) || codeVal;
+          stmts.push(
+            env.DB.prepare(
+              "INSERT OR IGNORE INTO config_customers (name, contract_code, contract_quota) VALUES (?, ?, ?)"
+            ).bind(name, finalCode, quotaVal)
+          );
+          if (finalCode && quotaVal > 1) {
+            stmts.push(
+              env.DB.prepare(
+                "INSERT OR REPLACE INTO sync_meta (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)"
+              ).bind(`contract_quota_${finalCode}`, String(quotaVal))
+            );
+          }
         }
       }
       if (stmts.length > 0) await executeBatchChunks(env.DB, stmts, 100);
@@ -803,7 +1199,7 @@ async function pullActivitiesFromSheets(env) {
   }
 
   const token = await getGoogleAccessToken(creds);
-  const rows = await fetchSheetValues(env.SPREADSHEET_LOGS_ID, "Activity_Log!A:O", token);
+  const rows = await fetchSheetValues(env.SPREADSHEET_LOGS_ID, "Activity_Log!A:P", token);
   if (!rows || rows.length <= 1) return 0;
 
   const headers = rows[0].map(h => String(h).trim());
@@ -816,7 +1212,7 @@ async function pullActivitiesFromSheets(env) {
   const { results: existingList } = await env.DB.prepare(`
     SELECT id, uuid, sheet_row, sync_status, customer, date, raised_by, services, category,
            project, task_description, root_cause, solution, clock_in, clock_out,
-           duration, duration_minutes, status, remarks
+           duration, duration_minutes, status, remarks, ticket_deduction
     FROM activities
   `).all();
 
@@ -848,6 +1244,21 @@ async function pullActivitiesFromSheets(env) {
     const rawDuration = getVal(row, "Duration");
     const status = getVal(row, "Status") || "In Progress";
     const remarks = getVal(row, "Remarks");
+    const rawDeduction = (
+      getVal(row, "Ticket Deduction") ||
+      getVal(row, "TicketDeduction") ||
+      getVal(row, "Ticket Quota") ||
+      (row.length > 15 ? row[15] : "")
+    );
+    let hasSheetDeduction = false;
+    let sheetDeductionVal = 0.0;
+    if (String(rawDeduction ?? "").trim() !== "") {
+      const parsedDed = parseFloat(String(rawDeduction).trim());
+      if (!isNaN(parsedDed)) {
+        sheetDeductionVal = parsedDed;
+        hasSheetDeduction = true;
+      }
+    }
 
     if (!rawDate && rawClockIn) rawDate = rawClockIn;
     const formattedDate = cleanDateFormat(rawDate);
@@ -893,29 +1304,42 @@ async function pullActivitiesFromSheets(env) {
           existing.duration !== durationStr ||
           existing.duration_minutes !== durationMinutes ||
           existing.status !== status ||
-          existing.remarks !== remarks
+          existing.remarks !== remarks ||
+          (hasSheetDeduction && Number(existing.ticket_deduction || 0.0) !== sheetDeductionVal)
         );
 
         if (hasChanged) {
+          let updatedDeduction = Number(existing.ticket_deduction || 0.0);
+          if (hasSheetDeduction) {
+            updatedDeduction = sheetDeductionVal;
+          } else if (
+            updatedDeduction === 0.0 &&
+            existing.customer !== customer &&
+            isContractCustomerName(customer) &&
+            (category || "").trim().toLowerCase() === "issue"
+          ) {
+            updatedDeduction = 1.0;
+          }
           stmts.push(env.DB.prepare(`
             UPDATE activities SET
               sheet_row = ?, customer = ?, date = ?, raised_by = ?, services = ?, category = ?,
               project = ?, task_description = ?, root_cause = ?, solution = ?, clock_in = ?,
               clock_out = ?, duration = ?, duration_minutes = ?, status = ?, remarks = ?,
-              sync_status = 'synced', updated_at = CURRENT_TIMESTAMP
+              ticket_deduction = ?, sync_status = 'synced', updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
           `).bind(
             idxRow, customer, formattedDate, raisedBy, services, category,
             project, taskDesc, rootCause, solution, String(rawClockIn), String(rawClockOut),
-            durationStr, durationMinutes, status, remarks, existing.id
+            durationStr, durationMinutes, status, remarks, updatedDeduction, existing.id
           ));
         }
       }
       updatedCount++;
     } else {
       let defaultDeduction = 0.0;
-      const custUpper = (customer || "").toUpperCase();
-      if ((custUpper.includes("MSIG") || custUpper.includes("ASJ")) && (category || "").toLowerCase() === "issue") {
+      if (hasSheetDeduction) {
+        defaultDeduction = sheetDeductionVal;
+      } else if (isContractCustomerName(customer) && (category || "").trim().toLowerCase() === "issue") {
         defaultDeduction = 1.0;
       }
 
@@ -950,7 +1374,9 @@ async function pullActivitiesFromSheets(env) {
   return updatedCount;
 }
 
-async function pushPendingToSheets(env) {
+let activePushPromise = null;
+
+async function _pushPendingToSheetsImpl(env) {
   const creds = getServiceAccount(env);
   if (!creds || !env.SPREADSHEET_LOGS_ID) return 0;
 
@@ -965,21 +1391,47 @@ async function pushPendingToSheets(env) {
   const token = await getGoogleAccessToken(creds);
   let syncedCount = 0;
 
-  for (const item of pending) {
+  // Build UUID -> row index map once if there are updates or deletes
+  const uuidToRow = new Map();
+  const hasUpdatesOrDeletes = pending.some(p => p.sync_status === "pending_update" || p.sync_status === "pending_delete");
+  if (hasUpdatesOrDeletes) {
     try {
+      const colARows = await fetchSheetValues(env.SPREADSHEET_LOGS_ID, "Activity_Log!A:A", token);
+      for (let idx = 1; idx < colARows.length; idx++) {
+        const cellVal = colARows[idx] && colARows[idx][0] ? String(colARows[idx][0]).trim() : "";
+        if (cellVal) uuidToRow.set(cellVal, idx + 1);
+      }
+    } catch (e) {
+      console.warn("Could not pre-fetch UUID column for row lookup:", e);
+    }
+  }
+
+  const insertsAndUpdates = pending.filter(p => p.sync_status === "pending_insert" || p.sync_status === "pending_update");
+  const deletes = pending.filter(p => p.sync_status === "pending_delete");
+
+  // 1. Process inserts and updates first
+  for (const item of insertsAndUpdates) {
+    try {
+      const itemUuid = String(item.uuid || "").trim();
+      const targetRow = uuidToRow.get(itemUuid) || item.sheet_row;
+      const dedVal = Number(item.ticket_deduction || 0.0);
+      const sheetDeduction = (dedVal > 0 || isContractCustomerName(item.customer)) ? dedVal : "";
+
       if (item.sync_status === "pending_insert") {
         const rowData = [
           item.uuid, item.customer, item.date, item.raised_by, item.services,
           item.category, item.project, item.task_description, item.root_cause,
-          item.solution, item.clock_in, item.clock_out, item.duration || "00:00", item.status, item.remarks
+          item.solution, item.clock_in, item.clock_out, item.duration || "00:00", item.status, item.remarks,
+          sheetDeduction
         ];
-        const res = await appendSheetValues(env.SPREADSHEET_LOGS_ID, "Activity_Log!A:O", rowData, token);
+        const res = await appendSheetValues(env.SPREADSHEET_LOGS_ID, "Activity_Log!A:P", rowData, token);
         let newRowIdx = null;
         const updatedRange = res?.updates?.updatedRange || "";
         const m = updatedRange.match(/A(\d+):/);
         if (m) newRowIdx = parseInt(m[1], 10);
 
         if (newRowIdx) {
+          if (itemUuid) uuidToRow.set(itemUuid, newRowIdx);
           await env.DB.prepare(
             "UPDATE activities SET sync_status = 'synced', sheet_row = ?, sync_error = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
           ).bind(newRowIdx, item.id).run();
@@ -990,30 +1442,51 @@ async function pushPendingToSheets(env) {
         }
         syncedCount++;
       } else if (item.sync_status === "pending_update") {
-        if (item.sheet_row && item.sheet_row > 1) {
+        if (targetRow && targetRow > 1) {
           const rowValues = [
             item.customer, item.date, item.raised_by, item.services,
             item.category, item.project, item.task_description, item.root_cause,
-            item.solution, item.clock_in, item.clock_out, item.duration || "00:00", item.status, item.remarks
+            item.solution, item.clock_in, item.clock_out, item.duration || "00:00", item.status, item.remarks,
+            sheetDeduction
           ];
-          await updateSheetValues(env.SPREADSHEET_LOGS_ID, `Activity_Log!B${item.sheet_row}:O${item.sheet_row}`, rowValues, token);
+          await updateSheetValues(env.SPREADSHEET_LOGS_ID, `Activity_Log!B${targetRow}:P${targetRow}`, rowValues, token);
+          await env.DB.prepare(
+            "UPDATE activities SET sync_status = 'synced', sheet_row = ?, sync_error = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+          ).bind(targetRow, item.id).run();
+        } else {
+          await env.DB.prepare(
+            "UPDATE activities SET sync_status = 'synced', sync_error = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+          ).bind(item.id).run();
         }
-        await env.DB.prepare(
-          "UPDATE activities SET sync_status = 'synced', sync_error = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-        ).bind(item.id).run();
-        syncedCount++;
-      } else if (item.sync_status === "pending_delete") {
-        if (item.sheet_row && item.sheet_row > 1) {
-          await deleteSheetRow(env.SPREADSHEET_LOGS_ID, "Activity_Log", item.sheet_row, token);
-        }
-        await env.DB.prepare("DELETE FROM activities WHERE id = ?").bind(item.id).run();
         syncedCount++;
       }
     } catch (err) {
       console.error(`Error syncing item ${item.id}:`, err);
       await env.DB.prepare(
         "UPDATE activities SET sync_error = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-      ).bind(String(err.message || err).slice(0, 500), item.id).run();
+      ).bind("Failed to synchronize record with Google Sheets.", item.id).run();
+    }
+  }
+
+  // 2. Process deletes in DESCENDING sheet_row order so row deletions never shift subsequent targets
+  const deletesWithRows = deletes.map(item => {
+    const itemUuid = String(item.uuid || "").trim();
+    const resolvedRow = Number(uuidToRow.get(itemUuid) || item.sheet_row || 0);
+    return { targetRow: resolvedRow, item };
+  }).sort((a, b) => b.targetRow - a.targetRow);
+
+  for (const { targetRow, item } of deletesWithRows) {
+    try {
+      if (targetRow && targetRow > 1) {
+        await deleteSheetRow(env.SPREADSHEET_LOGS_ID, "Activity_Log", targetRow, token);
+      }
+      await env.DB.prepare("DELETE FROM activities WHERE id = ?").bind(item.id).run();
+      syncedCount++;
+    } catch (err) {
+      console.error(`Error deleting item ${item.id}:`, err);
+      await env.DB.prepare(
+        "UPDATE activities SET sync_error = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+      ).bind("Failed to delete record from Google Sheets.", item.id).run();
     }
   }
 
@@ -1022,6 +1495,20 @@ async function pushPendingToSheets(env) {
     await setSyncMeta(env.DB, "last_push_time", new Date().toISOString());
   }
   return syncedCount;
+}
+
+async function pushPendingToSheets(env) {
+  if (activePushPromise) {
+    try {
+      await activePushPromise;
+    } catch {}
+  }
+  activePushPromise = _pushPendingToSheetsImpl(env);
+  try {
+    return await activePushPromise;
+  } finally {
+    activePushPromise = null;
+  }
 }
 
 async function fullSyncCycle(env) {
@@ -1038,7 +1525,7 @@ async function fullSyncCycle(env) {
   } catch (err) {
     console.error("Full sync cycle error:", err);
     if (env.DB) {
-      await setSyncMeta(env.DB, "last_sync_error", String(err.message || err).slice(0, 300));
+      await setSyncMeta(env.DB, "last_sync_error", "Synchronization with Google Sheets encountered an error.");
     }
     throw err;
   }
@@ -1055,7 +1542,7 @@ async function callGemini(prompt, apiKey, systemInstruction = null) {
 
   let lastError = null;
   for (const model of GEMINI_MODELS) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
     const contents = [];
     if (systemInstruction) {
       contents.push({ role: "user", parts: [{ text: `System Instructions: ${systemInstruction}` }] });
@@ -1066,7 +1553,10 @@ async function callGemini(prompt, apiKey, systemInstruction = null) {
     try {
       const res = await fetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": apiKey
+        },
         body: JSON.stringify({
           contents,
           generationConfig: {
@@ -1079,7 +1569,8 @@ async function callGemini(prompt, apiKey, systemInstruction = null) {
 
       if (!res.ok) {
         const errText = await res.text();
-        lastError = `HTTP ${res.status} (${model}): ${errText}`;
+        console.warn(`Gemini HTTP ${res.status} (${model}):`, errText.slice(0, 300));
+        lastError = `Gemini API request failed with HTTP ${res.status} (${model}).`;
         continue;
       }
 
@@ -1088,7 +1579,8 @@ async function callGemini(prompt, apiKey, systemInstruction = null) {
       if (text) return text;
       return "No content generated by Gemini.";
     } catch (e) {
-      lastError = `Error calling ${model}: ${e.message}`;
+      console.warn(`Error calling ${model}:`, e);
+      lastError = `Error calling Gemini model (${model}).`;
       continue;
     }
   }
@@ -1211,41 +1703,165 @@ export default {
     const url = new URL(request.url);
     const path = url.pathname;
     const method = request.method;
+    const clientIp = getClientIp(request);
 
-    // 1. Basic Auth check
-    if (!checkBasicAuth(request, env)) {
-      return new Response("Unauthorized", {
-        status: 401,
-        headers: { "WWW-Authenticate": 'Basic realm="MS Support Tracker"' }
+    // 1. Health check (unauthenticated for uptime monitors)
+    if (path === "/healthz") {
+      return jsonResponse({
+        status: "ok",
+        storage: "cloudflare-d1"
       });
+    }
+
+    // 2. Auth endpoints (/api/auth/login, /api/auth/logout, /api/auth/me, /login)
+    if (path === "/api/auth/login" && method === "POST") {
+      const { users, authEnabled, misconfigured } = getAuthConfig(env);
+      if (misconfigured) {
+        return jsonResponse({ detail: "Authentication is required by server policy but credentials are not properly configured." }, 503);
+      }
+      if (!authEnabled) {
+        return jsonResponse({ status: "ok", username: "anonymous", authEnabled: false });
+      }
+      if (!checkWorkerRateLimit(`login_fail:${clientIp}`, 10, 15 * 60 * 1000)) {
+        return jsonResponse(
+          { detail: "Too many failed login attempts. Please wait 15 minutes and try again." },
+          429,
+          { "Retry-After": "900" }
+        );
+      }
+      try {
+        const body = await request.json();
+        const u = String(body?.username || "").trim();
+        const p = String(body?.password || "");
+        const rememberMe = body?.rememberMe !== false;
+
+        const matchedUser = await verifyUserCredentials(u, p, users);
+        if (!matchedUser) {
+          return jsonResponse({ detail: "Invalid username or password." }, 401);
+        }
+
+        // Clear rate limit bucket on successful login
+        workerRateLimitBuckets.delete(`login_fail:${clientIp}`);
+
+        const ttl = rememberMe ? SESSION_TTL_REMEMBER : SESSION_TTL_DEFAULT;
+        const token = await createWorkerSessionToken(matchedUser, ttl, env, users);
+        const isHttps = url.protocol === "https:" || (request.headers.get("X-Forwarded-Proto") || "").toLowerCase() === "https";
+        const cookieStr = `${SESSION_COOKIE_NAME}=${token}; Max-Age=${ttl}; Path=/; HttpOnly; SameSite=Lax${isHttps ? "; Secure" : ""}`;
+
+        return jsonResponse(
+          { status: "ok", username: matchedUser, authEnabled: true, expiresIn: ttl },
+          200,
+          { "Set-Cookie": cookieStr }
+        );
+      } catch {
+        return jsonResponse({ detail: "Invalid login request payload." }, 400);
+      }
+    }
+
+    if (path === "/api/auth/logout" && method === "POST") {
+      const isHttps = url.protocol === "https:" || (request.headers.get("X-Forwarded-Proto") || "").toLowerCase() === "https";
+      const clearCookie = `${SESSION_COOKIE_NAME}=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax${isHttps ? "; Secure" : ""}`;
+      return jsonResponse({ status: "ok" }, 200, { "Set-Cookie": clearCookie });
+    }
+
+    if (path === "/api/auth/me" && method === "GET") {
+      const { authEnabled, misconfigured } = getAuthConfig(env);
+      if (misconfigured) {
+        return jsonResponse({ authenticated: false, authEnabled: true, username: null });
+      }
+      if (!authEnabled) {
+        return jsonResponse({ authenticated: true, authEnabled: false, username: "anonymous" });
+      }
+      const user = await getAuthenticatedUser(request, env);
+      return jsonResponse({
+        authenticated: Boolean(user),
+        authEnabled: true,
+        username: user
+      });
+    }
+
+    // Serve /login page and static assets needed by /login before auth gate
+    const isPublicAsset = (
+      path.startsWith("/static/") ||
+      path === "/favicon.ico" ||
+      path === "/favicon.png" ||
+      path === "/manifest.json" ||
+      path === "/sw.js"
+    );
+
+    if (path === "/login" || path === "/login.html") {
+      const { authEnabled, misconfigured } = getAuthConfig(env);
+      const user = await getAuthenticatedUser(request, env);
+      if ((!authEnabled && !misconfigured) || user) {
+        return new Response(null, {
+          status: 302,
+          headers: { Location: "/", ...SECURITY_HEADERS }
+        });
+      }
+      if (env.ASSETS) {
+        const loginReq = new Request(new URL("/login", request.url).toString(), {
+          method: "GET",
+          headers: request.headers
+        });
+        let assetRes = await env.ASSETS.fetch(loginReq);
+        if (assetRes.status === 404) {
+          const loginHtmlReq = new Request(new URL("/login.html", request.url).toString(), {
+            method: "GET",
+            headers: request.headers
+          });
+          assetRes = await env.ASSETS.fetch(loginHtmlReq);
+        }
+        const newHeaders = new Headers(assetRes.headers);
+        for (const [k, v] of Object.entries(SECURITY_HEADERS)) {
+          newHeaders.set(k, v);
+        }
+        newHeaders.set("Cache-Control", "no-store, no-cache, must-revalidate");
+        return new Response(assetRes.body, {
+          status: assetRes.status,
+          statusText: assetRes.statusText,
+          headers: newHeaders
+        });
+      }
+    }
+
+    if (isPublicAsset && env.ASSETS) {
+      const assetRes = await env.ASSETS.fetch(request);
+      const newHeaders = new Headers(assetRes.headers);
+      for (const [k, v] of Object.entries(SECURITY_HEADERS)) {
+        newHeaders.set(k, v);
+      }
+      return new Response(assetRes.body, {
+        status: assetRes.status,
+        statusText: assetRes.statusText,
+        headers: newHeaders
+      });
+    }
+
+    // 3. Enforce Session Cookie or Basic Auth
+    const authUser = await getAuthenticatedUser(request, env);
+    if (!authUser) {
+      const { misconfigured } = getAuthConfig(env);
+      if (misconfigured) {
+        return jsonResponse({ detail: "Server authentication is required by policy but credentials are not properly configured." }, 503);
+      }
+      if (!path.startsWith("/api/")) {
+        return new Response(null, {
+          status: 302,
+          headers: { Location: "/login", ...SECURITY_HEADERS }
+        });
+      }
+      const hasBasicHeader = (request.headers.get("Authorization") || "").toLowerCase().startsWith("basic ");
+      const extraHeaders = hasBasicHeader ? { "WWW-Authenticate": 'Basic realm="MS Support Tracker"' } : {};
+      return jsonResponse(
+        { error: "Unauthorized", detail: "Unauthorized. Please sign in at /login.", loginUrl: "/login" },
+        401,
+        extraHeaders
+      );
     }
 
     // Ensure D1 database schema exists
     if (env.DB) {
       await ensureD1Schema(env.DB);
-    }
-
-    // 2. Health check
-    if (path === "/healthz") {
-      try {
-        const total = await countTotalActivities(env.DB);
-        const pending = await countPendingSync(env.DB);
-        const lastPull = await getSyncMeta(env.DB, "last_pull_time");
-        const lastPush = await getSyncMeta(env.DB, "last_push_time");
-        const lastError = await getSyncMeta(env.DB, "last_sync_error");
-
-        return jsonResponse({
-          status: "ok",
-          storage: "cloudflare-d1",
-          total_activities: total,
-          pending_sync: pending,
-          last_pull: lastPull,
-          last_push: lastPush,
-          last_sync_error: lastError || ""
-        });
-      } catch (e) {
-        return jsonResponse({ status: "error", error: e.message }, 500);
-      }
     }
 
     // 3. API Routes
@@ -1265,11 +1881,15 @@ export default {
           last_sync_error: lastError || ""
         });
       } catch (e) {
-        return jsonResponse({ error: e.message }, 500);
+        console.error("Error in /api/sync-status:", e);
+        return jsonResponse({ error: "Failed to fetch sync status." }, 500);
       }
     }
 
     if (path === "/api/trigger-sync" && method === "POST") {
+      if (!checkWorkerRateLimit(`sync:${clientIp}`, 6, 60000)) {
+        return jsonResponse({ status: "error", message: "Too many sync requests. Please wait a moment." }, 429, { "Retry-After": "60" });
+      }
       try {
         await fullSyncCycle(env);
         const err = (await getSyncMeta(env.DB, "last_sync_error")) || "";
@@ -1278,7 +1898,8 @@ export default {
           message: err ? err : "Full synchronization completed"
         });
       } catch (e) {
-        return jsonResponse({ status: "error", message: e.message }, 500);
+        console.error("Error in /api/trigger-sync:", e);
+        return jsonResponse({ status: "error", message: "Failed to complete synchronization." }, 500);
       }
     }
 
@@ -1291,7 +1912,8 @@ export default {
         await setSyncMeta(env.DB, "last_sync_error", "");
         return jsonResponse({ status: "success", message: "All pending sync items marked as synced locally" });
       } catch (e) {
-        return jsonResponse({ error: e.message }, 500);
+        console.error("Error in /api/force-resolve-pending-sync:", e);
+        return jsonResponse({ error: "Failed to resolve pending sync items." }, 500);
       }
     }
 
@@ -1308,13 +1930,43 @@ export default {
         }
         return jsonResponse(customers);
       } catch (e) {
-        return jsonResponse({ error: e.message }, 500);
+        console.error("Error in /api/customers:", e);
+        return jsonResponse({ error: "Failed to load customers." }, 500);
+      }
+    }
+
+    if (path === "/api/contract-config" && method === "GET") {
+      try {
+        const cfg = await getContractConfig(env.DB);
+        return jsonResponse(cfg);
+      } catch (e) {
+        console.error("Error in GET /api/contract-config:", e);
+        return jsonResponse({ error: "Failed to load contract configuration." }, 500);
+      }
+    }
+
+    if (path === "/api/contract-config" && method === "POST") {
+      if (!checkWorkerRateLimit(`write:${clientIp}`, 60, 60000)) {
+        return jsonResponse({ error: "Too many requests. Please try again later." }, 429, { "Retry-After": "60" });
+      }
+      try {
+        const data = await request.json();
+        const client = String(data?.client || "").trim();
+        const quota = Number(data?.quota);
+        if (!client || client.length > 50 || isNaN(quota) || quota < 1 || quota > 10000) {
+          return jsonResponse({ error: "Invalid client or quota parameter." }, 400);
+        }
+        const cfg = await saveContractQuota(env.DB, client, quota);
+        return jsonResponse(cfg);
+      } catch (e) {
+        console.error("Error in POST /api/contract-config:", e);
+        return jsonResponse({ error: "Failed to save contract configuration." }, 500);
       }
     }
 
     if (path === "/api/customer-resources" && method === "GET") {
       try {
-        const customer = url.searchParams.get("customer") || "";
+        const customer = (url.searchParams.get("customer") || "").slice(0, 200);
         let data = await getCachedResources(env.DB, customer);
         if (!data.raisedBy || data.raisedBy.length === 0) {
           try {
@@ -1326,14 +1978,19 @@ export default {
         }
         return jsonResponse(data);
       } catch (e) {
-        return jsonResponse({ error: e.message }, 500);
+        console.error("Error in /api/customer-resources:", e);
+        return jsonResponse({ error: "Failed to load customer resources." }, 500);
       }
     }
 
     if (path === "/api/activity-logs" && method === "GET") {
       try {
         const refresh = url.searchParams.get("refresh") === "true";
-        const orderBy = url.searchParams.get("order_by") || "sheet_desc";
+        const orderBy = (url.searchParams.get("order_by") || "sheet_desc").slice(0, 40);
+
+        if (refresh && !checkWorkerRateLimit(`sync:${clientIp}`, 6, 60000)) {
+          return jsonResponse({ error: "Too many refresh requests. Please wait a moment." }, 429, { "Retry-After": "60" });
+        }
 
         let logs = await getActivities(env.DB, orderBy);
 
@@ -1350,13 +2007,21 @@ export default {
 
         return jsonResponse(logs);
       } catch (e) {
-        return jsonResponse({ error: e.message }, 500);
+        console.error("Error in /api/activity-logs:", e);
+        return jsonResponse({ error: "Failed to fetch activity logs." }, 500);
       }
     }
 
     if (path === "/api/submit-activity" && method === "POST") {
+      if (!checkWorkerRateLimit(`write:${clientIp}`, 60, 60000)) {
+        return jsonResponse({ error: "Too many requests. Please try again later." }, 429, { "Retry-After": "60" });
+      }
       try {
         const data = await request.json();
+        const validationErr = validateActivityInput(data);
+        if (validationErr) {
+          return jsonResponse({ error: validationErr }, 400);
+        }
         const { durationStr, durationMinutes } = calculateDuration(data.clockIn, data.clockOut);
 
         const newId = await insertActivity(env.DB, {
@@ -1368,47 +2033,74 @@ export default {
         ctx.waitUntil(pushPendingToSheets(env));
         return jsonResponse({ status: "success", id: newId });
       } catch (e) {
-        return jsonResponse({ error: e.message }, 500);
+        console.error("Error in /api/submit-activity:", e);
+        return jsonResponse({ error: "Failed to submit activity record." }, 500);
       }
     }
 
     if (path === "/api/update-status" && method === "POST") {
+      if (!checkWorkerRateLimit(`write:${clientIp}`, 60, 60000)) {
+        return jsonResponse({ error: "Too many requests. Please try again later." }, 429, { "Retry-After": "60" });
+      }
       try {
         const data = await request.json();
-        await updateActivityStatus(env.DB, data.rowId, data.status, "pending_update");
+        const rowId = Number(data?.rowId);
+        if (!Number.isInteger(rowId) || rowId < 1 || !["In Progress", "Closed"].includes(data?.status)) {
+          return jsonResponse({ error: "Invalid rowId or status." }, 400);
+        }
+        await updateActivityStatus(env.DB, rowId, data.status, "pending_update");
         ctx.waitUntil(pushPendingToSheets(env));
         return jsonResponse({ status: "success" });
       } catch (e) {
-        return jsonResponse({ error: e.message }, 500);
+        console.error("Error in /api/update-status:", e);
+        return jsonResponse({ error: "Failed to update activity status." }, 500);
       }
     }
 
     if (path === "/api/update-ticket-deduction" && method === "POST") {
+      if (!checkWorkerRateLimit(`write:${clientIp}`, 60, 60000)) {
+        return jsonResponse({ error: "Too many requests. Please try again later." }, 429, { "Retry-After": "60" });
+      }
       try {
         const data = await request.json();
-        await updateActivityTicketDeduction(env.DB, data.rowId, data.ticketDeduction);
-        return jsonResponse({ status: "success", ticketDeduction: data.ticketDeduction });
+        const rowId = Number(data?.rowId);
+        const deduction = Number(data?.ticketDeduction);
+        if (!Number.isInteger(rowId) || rowId < 1 || isNaN(deduction) || deduction < 0 || deduction > 100) {
+          return jsonResponse({ error: "Invalid rowId or ticketDeduction." }, 400);
+        }
+        await updateActivityTicketDeduction(env.DB, rowId, deduction);
+        ctx.waitUntil(pushPendingToSheets(env));
+        return jsonResponse({ status: "success", ticketDeduction: deduction });
       } catch (e) {
-        return jsonResponse({ error: e.message }, 500);
+        console.error("Error in /api/update-ticket-deduction:", e);
+        return jsonResponse({ error: "Failed to update ticket deduction." }, 500);
       }
     }
 
     if (path === "/api/update-record" && method === "POST") {
+      if (!checkWorkerRateLimit(`write:${clientIp}`, 60, 60000)) {
+        return jsonResponse({ error: "Too many requests. Please try again later." }, 429, { "Retry-After": "60" });
+      }
       try {
         const data = await request.json();
+        const rowId = Number(data?.rowId);
+        const validationErr = validateActivityInput(data);
+        if (!Number.isInteger(rowId) || rowId < 1 || validationErr) {
+          return jsonResponse({ error: validationErr || "Invalid rowId." }, 400);
+        }
         let { durationStr, durationMinutes } = calculateDuration(data.clockIn, data.clockOut);
 
         if (durationMinutes === 0 && !data.clockIn && !data.clockOut) {
           const existing = await env.DB.prepare(
             "SELECT clock_in, clock_out, duration, duration_minutes FROM activities WHERE id = ?"
-          ).bind(data.rowId).first();
+          ).bind(rowId).first();
           if (existing && !existing.clock_in && !existing.clock_out && existing.duration_minutes > 0) {
             durationStr = existing.duration || "00:00";
             durationMinutes = existing.duration_minutes || 0;
           }
         }
 
-        await updateActivity(env.DB, data.rowId, {
+        await updateActivity(env.DB, rowId, {
           ...data,
           duration: durationStr,
           durationMinutes: durationMinutes
@@ -1417,25 +2109,36 @@ export default {
         ctx.waitUntil(pushPendingToSheets(env));
         return jsonResponse({ status: "success" });
       } catch (e) {
-        return jsonResponse({ error: e.message }, 500);
+        console.error("Error in /api/update-record:", e);
+        return jsonResponse({ error: "Failed to update activity record." }, 500);
       }
     }
 
     if (path.startsWith("/api/delete-record/") && method === "DELETE") {
+      if (!checkWorkerRateLimit(`write:${clientIp}`, 60, 60000)) {
+        return jsonResponse({ error: "Too many requests. Please try again later." }, 429, { "Retry-After": "60" });
+      }
       try {
         const rowId = parseInt(path.split("/").pop(), 10);
+        if (isNaN(rowId) || rowId < 1) {
+          return jsonResponse({ error: "Invalid record ID." }, 400);
+        }
         await deleteActivity(env.DB, rowId);
         ctx.waitUntil(pushPendingToSheets(env));
         return jsonResponse({ status: "success" });
       } catch (e) {
-        return jsonResponse({ error: e.message }, 500);
+        console.error("Error in /api/delete-record:", e);
+        return jsonResponse({ error: "Failed to delete activity record." }, 500);
       }
     }
 
     if (path === "/api/ai/executive-summary" && method === "POST") {
+      if (!checkWorkerRateLimit(`ai:${clientIp}`, 10, 300000)) {
+        return jsonResponse({ error: "Too many AI requests. Please wait a few minutes." }, 429, { "Retry-After": "300" });
+      }
       try {
         const reqData = await request.json();
-        const apiKey = reqData.apiKey || env.GEMINI_API_KEY || "";
+        const apiKey = String(reqData?.apiKey || env.GEMINI_API_KEY || "").trim().slice(0, 256);
         if (!apiKey) {
           return jsonResponse({ error: "Gemini API key is required." }, 400);
         }
@@ -1444,65 +2147,83 @@ export default {
         let filtered = allLogs;
 
         if (reqData.customer) {
-          filtered = filtered.filter(a => a.customer === reqData.customer);
+          filtered = filtered.filter(a => a.customer === String(reqData.customer).slice(0, 200));
         }
         if (reqData.startDate) {
-          filtered = filtered.filter(a => a.date >= reqData.startDate);
+          filtered = filtered.filter(a => a.date >= String(reqData.startDate).slice(0, 40));
         }
         if (reqData.endDate) {
-          filtered = filtered.filter(a => a.date <= reqData.endDate);
+          filtered = filtered.filter(a => a.date <= String(reqData.endDate).slice(0, 40));
         }
 
         if (filtered.length === 0) filtered = allLogs.slice(0, 50);
 
-        let periodStr = `${reqData.startDate || "All time"} to ${reqData.endDate || "Present"}`;
-        if (reqData.customer) periodStr += ` (Customer: ${reqData.customer})`;
+        let periodStr = `${String(reqData.startDate || "All time").slice(0, 40)} to ${String(reqData.endDate || "Present").slice(0, 40)}`;
+        if (reqData.customer) periodStr += ` (Customer: ${String(reqData.customer).slice(0, 200)})`;
 
         const summary = await generateExecutiveSummary(filtered, periodStr, apiKey);
         return jsonResponse({ summary, count: filtered.length, period: periodStr });
       } catch (e) {
-        return jsonResponse({ error: e.message }, 500);
+        console.error("Error in /api/ai/executive-summary:", e);
+        return jsonResponse({ error: "Failed to generate AI executive summary." }, 500);
       }
     }
 
     if (path === "/api/ai/polish" && method === "POST") {
+      if (!checkWorkerRateLimit(`ai:${clientIp}`, 15, 300000)) {
+        return jsonResponse({ error: "Too many AI requests. Please wait a few minutes." }, 429, { "Retry-After": "300" });
+      }
       try {
         const reqData = await request.json();
-        const apiKey = reqData.apiKey || env.GEMINI_API_KEY || "";
+        const apiKey = String(reqData?.apiKey || env.GEMINI_API_KEY || "").trim().slice(0, 256);
         if (!apiKey) {
           return jsonResponse({ error: "Gemini API key is required." }, 400);
         }
 
         const polished = await polishActivityNotes(
-          reqData.taskDescription || "",
-          reqData.rootCause || "",
-          reqData.solution || "",
+          String(reqData.taskDescription || "").slice(0, 5000),
+          String(reqData.rootCause || "").slice(0, 5000),
+          String(reqData.solution || "").slice(0, 5000),
           apiKey
         );
         return jsonResponse(polished);
       } catch (e) {
-        return jsonResponse({ error: e.message }, 500);
+        console.error("Error in /api/ai/polish:", e);
+        return jsonResponse({ error: "Failed to polish activity notes with AI." }, 500);
       }
     }
 
     if (path === "/api/knowledge-base/search" && method === "GET") {
       try {
-        const q = url.searchParams.get("q") || "";
-        const customer = url.searchParams.get("customer") || null;
-        const services = url.searchParams.get("services") || null;
+        const q = (url.searchParams.get("q") || "").slice(0, 200);
+        const customer = url.searchParams.get("customer") ? url.searchParams.get("customer").slice(0, 200) : null;
+        const services = url.searchParams.get("services") ? url.searchParams.get("services").slice(0, 200) : null;
         const results = await searchKnowledgeBase(env.DB, q, customer, services, 6);
         return jsonResponse({ results, count: results.length });
       } catch (e) {
-        return jsonResponse({ error: e.message }, 500);
+        console.error("Error in /api/knowledge-base/search:", e);
+        return jsonResponse({ error: "Failed to search knowledge base." }, 500);
       }
     }
 
-    // 4. Serve Static Assets (Workers with Assets binding)
+    // 4. Serve Static Assets (Workers with Assets binding) with security headers
     if (env.ASSETS) {
-      return env.ASSETS.fetch(request);
+      const assetRes = await env.ASSETS.fetch(request);
+      const newHeaders = new Headers(assetRes.headers);
+      for (const [k, v] of Object.entries(SECURITY_HEADERS)) {
+        newHeaders.set(k, v);
+      }
+      if (path === "/" || path === "/index.html") {
+        newHeaders.set("Cache-Control", "no-store, no-cache, must-revalidate");
+      }
+      return new Response(assetRes.body, {
+        status: assetRes.status,
+        statusText: assetRes.statusText,
+        headers: newHeaders
+      });
     }
 
-    return new Response("Not Found", { status: 404 });
+    return new Response("Not Found", { status: 404, headers: SECURITY_HEADERS });
   },
 
   // 5. Cloudflare Workers Cron Trigger for periodic sync

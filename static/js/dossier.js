@@ -62,11 +62,12 @@
 
             // 2. Contract Quota Section (if MSIG or ASJ)
             const msigSection = document.getElementById('dossierMsigQuotaSection');
-            const contractClient = typeof getContractClientName === 'function' ? getContractClientName(customerName) : (customerName.toUpperCase().includes('MSIG') ? 'MSIG' : (customerName.toUpperCase().includes('ASJ') ? 'ASJ' : ''));
+            const contractClient = typeof getContractClientName === 'function' ? getContractClientName(customerName) : (customerName.toUpperCase().includes('MSIG') ? 'MSIG' : ((customerName.toUpperCase().includes('ASJ') || customerName.toUpperCase().includes('SIMAS JIWA')) ? 'ASJ' : ''));
             if (contractClient) {
                 msigSection.style.display = 'block';
                 const titleEl = document.getElementById('dossierContractTitle');
-                if (titleEl) titleEl.innerText = `${contractClient} Contract Ticket Consumption`;
+                const displayClientName = typeof getContractDisplayName === 'function' ? getContractDisplayName(contractClient) : (contractClient === 'ASJ' ? 'Asuransi Simas Jiwa' : 'MSIG Life');
+                if (titleEl) titleEl.innerText = `${displayClientName} Contract Ticket Consumption`;
                 let totalBurn = 0.0;
                 cLogs.forEach(l => {
                     const c = typeof calculateContractTicketBurn === 'function' ? calculateContractTicketBurn(l) : calculateMsigTicketBurn(l);
@@ -114,7 +115,7 @@
                         <div class="dossier-task-item">
                             <div class="dossier-task-header">
                                 <div style="font-size: 11px; font-weight: 700; color: #b45309; background: #fef3c7; padding: 2px 7px; border-radius: 4px;">
-                                    ⏳ ${task.date || '-'}
+                                    ⏳ ${escapeHtml(task.date || '-')}
                                 </div>
                                 <div style="display: flex; gap: 6px;">
                                     <button type="button" class="btn-secondary" style="padding: 2px 8px; font-size: 10.5px; font-weight: 700; background: #dcfce7; color: #15803d; border-color: #86efac; cursor: pointer;" onclick="quickCloseDossierTask(${task.rowId})" title="Tandai tiket ini selesai (Closed)">
@@ -126,14 +127,14 @@
                                 </div>
                             </div>
                             <div style="font-size: 12.5px; font-weight: 700; color: var(--text);">
-                                ${task.taskDescription || '-'}
+                                ${escapeHtml(task.taskDescription || '-')}
                             </div>
                             <div style="display: flex; gap: 6px; flex-wrap: wrap; font-size: 10.5px; color: var(--muted);">
-                                ${task.project ? `<span class="dossier-badge-chip" title="Project ID">📁 ${task.project}</span>` : ''}
-                                ${task.services ? `<span class="dossier-badge-chip">🛠️ ${task.services}</span>` : ''}
-                                ${task.category ? `<span class="dossier-badge-chip">🏷️ ${task.category}</span>` : ''}
-                                ${task.raisedBy ? `<span class="dossier-badge-chip">👤 ${task.raisedBy}</span>` : ''}
-                                <span class="dossier-badge-chip">⏱️ ${durText}</span>
+                                ${task.project ? `<span class="dossier-badge-chip" title="Project ID">📁 ${escapeHtml(task.project)}</span>` : ''}
+                                ${task.services ? `<span class="dossier-badge-chip">🛠️ ${escapeHtml(task.services)}</span>` : ''}
+                                ${task.category ? `<span class="dossier-badge-chip">🏷️ ${escapeHtml(task.category)}</span>` : ''}
+                                ${task.raisedBy ? `<span class="dossier-badge-chip">👤 ${escapeHtml(task.raisedBy)}</span>` : ''}
+                                <span class="dossier-badge-chip">⏱️ ${escapeHtml(durText)}</span>
                             </div>
                         </div>
                     `;
@@ -164,7 +165,7 @@
             } else {
                 servicesContainer.innerHTML = topServices.map(([svc, count]) => `
                     <div style="display: flex; justify-content: space-between; align-items: center; background: var(--card-bg); border: 1px solid var(--border); padding: 5px 9px; border-radius: 6px; font-size: 11px;">
-                        <span style="font-weight: 600; color: var(--text);">${svc}</span>
+                        <span style="font-weight: 600; color: var(--text);">${escapeHtml(svc)}</span>
                         <span style="font-weight: 800; color: var(--primary);">${count}x</span>
                     </div>
                 `).join('');
@@ -176,7 +177,7 @@
             } else {
                 contactsContainer.innerHTML = topContacts.map(([contact, count]) => `
                     <div style="display: flex; justify-content: space-between; align-items: center; background: var(--card-bg); border: 1px solid var(--border); padding: 5px 9px; border-radius: 6px; font-size: 11px;">
-                        <span style="font-weight: 600; color: var(--text);">${contact}</span>
+                        <span style="font-weight: 600; color: var(--text);">${escapeHtml(contact)}</span>
                         <span style="font-weight: 800; color: #10b981;">${count}x</span>
                     </div>
                 `).join('');
@@ -199,27 +200,27 @@
                         <div class="dossier-timeline-item">
                             <div class="dossier-timeline-dot ${isClosed ? 'closed' : 'progress'}"></div>
                             <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px; margin-bottom: 2px;">
-                                <span style="font-weight: 700; color: var(--muted);">${l.date || '-'}</span>
-                                <span style="font-weight: 700; font-size: 10px; padding: 2px 6px; border-radius: 4px; ${isClosed ? 'background:#dcfce7; color:#15803d;' : 'background:#fef3c7; color:#b45309;'}">${l.status || 'In Progress'}</span>
+                                <span style="font-weight: 700; color: var(--muted);">${escapeHtml(l.date || '-')}</span>
+                                <span style="font-weight: 700; font-size: 10px; padding: 2px 6px; border-radius: 4px; ${isClosed ? 'background:#dcfce7; color:#15803d;' : 'background:#fef3c7; color:#b45309;'}">${escapeHtml(l.status || 'In Progress')}</span>
                             </div>
                             ${l.project ? `
                                 <div style="font-size: 11px; margin-bottom: 3px;">
                                     <span style="font-size: 10px; font-weight: 600; color: var(--muted);">Project ID:</span> 
-                                    <code style="font-size: 10.5px; font-weight: 600; color: var(--primary); background: var(--input-bg); padding: 1px 5px; border-radius: 4px; border: 1px solid var(--border);">${l.project}</code>
+                                    <code style="font-size: 10.5px; font-weight: 600; color: var(--primary); background: var(--input-bg); padding: 1px 5px; border-radius: 4px; border-radius: 4px; border: 1px solid var(--border);">${escapeHtml(l.project)}</code>
                                 </div>
                             ` : ''}
                             <div style="font-size: 12px; font-weight: 700; color: var(--text); margin-bottom: 3px;">
-                                ${l.taskDescription || '-'}
+                                ${escapeHtml(l.taskDescription || '-')}
                             </div>
                             ${(l.rootCause || l.solution) ? `
                                 <div style="font-size: 10.5px; color: var(--muted); margin-bottom: 4px; background: var(--input-bg); padding: 4px 8px; border-radius: 4px; border-left: 2px solid var(--primary);">
-                                    ${l.rootCause ? `<div><em>RC:</em> ${l.rootCause}</div>` : ''}
-                                    ${l.solution ? `<div><em>Solusi:</em> ${l.solution}</div>` : ''}
+                                    ${l.rootCause ? `<div><em>RC:</em> ${escapeHtml(l.rootCause)}</div>` : ''}
+                                    ${l.solution ? `<div><em>Solusi:</em> ${escapeHtml(l.solution)}</div>` : ''}
                                 </div>
                             ` : ''}
                             <div style="display: flex; gap: 5px; flex-wrap: wrap; font-size: 10px;">
-                                ${l.services ? `<span class="dossier-badge-chip">${l.services}</span>` : ''}
-                                <span class="dossier-badge-chip">⏱️ ${durText}</span>
+                                ${l.services ? `<span class="dossier-badge-chip">${escapeHtml(l.services)}</span>` : ''}
+                                <span class="dossier-badge-chip">⏱️ ${escapeHtml(durText)}</span>
                                 ${(msigBurn.isContract || msigBurn.isMsig) ? msigBurn.badgeHtml : ''}
                             </div>
                         </div>
@@ -248,8 +249,21 @@
             if (cust) {
                 const custInp = document.getElementById('customer');
                 if (custInp) {
-                    custInp.value = cust;
-                    onCustomerChange();
+                    let exists = false;
+                    for (let opt of custInp.options) {
+                        if (opt.value.toLowerCase() === cust.toLowerCase()) {
+                            custInp.value = opt.value;
+                            exists = true;
+                            break;
+                        }
+                    }
+                    if (!exists) {
+                        const newOpt = new Option(cust, cust, true, true);
+                        custInp.insertBefore(newOpt, custInp.lastChild);
+                        custInp.value = cust;
+                    }
+                    if (typeof handleCustomerChange === 'function') handleCustomerChange(custInp);
+                    if (typeof updateContractFormHelper === 'function') updateContractFormHelper('add');
                 }
             }
         }

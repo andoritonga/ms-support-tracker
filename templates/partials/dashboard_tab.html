@@ -4,27 +4,35 @@
             <!-- DASHBOARD DATE RANGE FILTER & CONTROLS -->
             <div class="dashboard-filter-card">
                 <div class="dash-filter-inputs">
+                    <div class="dash-filter-header-mobile">
+                        <span class="dash-period-title">📅 Analytics Period</span>
+                        <button type="button" class="btn-dash-reset-mobile" onclick="resetDashboardFilter()">🔄 Reset</button>
+                    </div>
                     <span class="preset-label">Analytics Period:</span>
-                    <div>
-                        <input type="date" id="dashStartDate" onchange="updateDashboardAnalytics()"
-                            placeholder="Start Date" />
+                    <div class="dash-date-range-row">
+                        <div class="dash-date-input-wrap">
+                            <input type="date" id="dashStartDate" onchange="updateDashboardAnalytics()"
+                                placeholder="Start Date" />
+                        </div>
+                        <span class="dash-date-sep">-</span>
+                        <div class="dash-date-input-wrap">
+                            <input type="date" id="dashEndDate" onchange="updateDashboardAnalytics()"
+                                placeholder="End Date" />
+                        </div>
                     </div>
-                    <span style="font-weight:700; color:var(--muted);">-</span>
-                    <div>
-                        <input type="date" id="dashEndDate" onchange="updateDashboardAnalytics()"
-                            placeholder="End Date" />
-                    </div>
-                    <button class="btn-secondary" style="padding: 9px 16px;" onclick="resetDashboardFilter()">🔄 Reset
+                    <button class="btn-secondary dash-reset-desktop" style="padding: 9px 16px;" onclick="resetDashboardFilter()">🔄 Reset
                         Filter</button>
                 </div>
-                <div class="dash-btn-group">
+
+                <!-- Desktop Full Button Group -->
+                <div class="dash-btn-group dash-actions-desktop">
                     <button class="btn-secondary" style="padding: 9px 18px;" onclick="fetchLogs()">🔄 Refresh
                         Data</button>
                     <button class="btn-secondary" style="padding: 9px 18px;" onclick="exportDashboardExcel()" title="Export current dashboard period activities to Excel">
                         <span>📊</span> Export Excel
                     </button>
-                    <button class="btn-client-report-secondary" onclick="openClientReportModal()" title="Generate client-facing monthly SLA and activity report">
-                        <span>📑</span> Client SLA Report
+                    <button class="btn-client-report-secondary" onclick="openClientReportModal()" title="Generate weekly customer performance & issue health report">
+                        <span>📑</span> Weekly Customer Report
                     </button>
                     <button class="btn-summary" onclick="generateExecutiveSummary()" title="Print traditional HTML report">
                         <span>📄</span>
@@ -34,6 +42,51 @@
                         <span>✨</span>
                         <span>Gemini AI Summary</span>
                     </button>
+                </div>
+
+                <!-- Mobile Minimalist Action Bar + Collapsible Drawer (Opsi 2) -->
+                <div class="dash-mobile-actions-bar">
+                    <button type="button" class="btn-ai-summary dash-mobile-ai-btn" onclick="openAISummaryModal()">
+                        <span>✨</span>
+                        <span>AI Summary</span>
+                    </button>
+                    <div class="dash-mobile-drawer-wrap">
+                        <button type="button" class="btn-secondary dash-mobile-more-btn" id="dashMobileActionsBtn" onclick="toggleDashActionsMenu(event)">
+                            <span>⚡</span>
+                            <span>Actions &amp; Export</span>
+                            <span class="dash-chevron" id="dashMobileChevron">▾</span>
+                        </button>
+                        <div class="dash-mobile-actions-menu" id="dashMobileActionsMenu">
+                            <button type="button" class="dash-menu-item" onclick="closeDashActionsMenu(); fetchLogs();">
+                                <span class="dash-menu-icon">🔄</span>
+                                <div class="dash-menu-text">
+                                    <strong>Refresh Data</strong>
+                                    <small>Sync latest activity logs</small>
+                                </div>
+                            </button>
+                            <button type="button" class="dash-menu-item" onclick="closeDashActionsMenu(); exportDashboardExcel();">
+                                <span class="dash-menu-icon">📊</span>
+                                <div class="dash-menu-text">
+                                    <strong>Export Excel (.xlsx)</strong>
+                                    <small>Download filtered period data</small>
+                                </div>
+                            </button>
+                            <button type="button" class="dash-menu-item" onclick="closeDashActionsMenu(); openClientReportModal();">
+                                <span class="dash-menu-icon">📑</span>
+                                <div class="dash-menu-text">
+                                    <strong>Weekly Customer Report</strong>
+                                    <small>SLA &amp; issue health summary</small>
+                                </div>
+                            </button>
+                            <button type="button" class="dash-menu-item" onclick="closeDashActionsMenu(); generateExecutiveSummary();">
+                                <span class="dash-menu-icon">📄</span>
+                                <div class="dash-menu-text">
+                                    <strong>Print Summary</strong>
+                                    <small>Printable executive PDF view</small>
+                                </div>
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -65,9 +118,9 @@
                         <div>
                             <div style="font-size: 14px; font-weight: 800; color: var(--text); display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
                                 <span>Client Contract Ticket Consumption</span>
-                                <div class="contract-client-toggle">
-                                    <button type="button" class="btn-contract-toggle active" id="btnContractMSIG" onclick="switchContractClient('MSIG')">MSIG</button>
-                                    <button type="button" class="btn-contract-toggle" id="btnContractASJ" onclick="switchContractClient('ASJ')">ASJ</button>
+                                <div class="contract-client-toggle" id="contractClientToggleContainer">
+                                    <button type="button" class="btn-contract-toggle active" id="btnContractMSIG" data-client="MSIG" onclick="switchContractClient('MSIG')">MSIG Life</button>
+                                    <button type="button" class="btn-contract-toggle" id="btnContractASJ" data-client="ASJ" onclick="switchContractClient('ASJ')">Asuransi Simas Jiwa</button>
                                 </div>
                             </div>
                             <div style="font-size: 11.5px; color: var(--muted); margin-top: 2px;">
@@ -76,7 +129,7 @@
                         </div>
                     </div>
                     <div style="display: flex; align-items: center; gap: 8px;">
-                        <span style="font-size: 12px; font-weight: 700; color: var(--muted);" id="msigQuotaClientLabel">MSIG Quota:</span>
+                        <span style="font-size: 12px; font-weight: 700; color: var(--muted);" id="msigQuotaClientLabel">MSIG Life Quota:</span>
                         <input type="number" id="msigQuotaLimit" value="50" min="1" max="1000" style="width: 65px; padding: 4px 8px; font-size: 12px; font-weight: 800; text-align: center; border-radius: 8px;" onchange="saveMsigQuotaLimit()" />
                         <span style="font-size: 12px; font-weight: 700; color: var(--muted);">Tkts</span>
                     </div>
@@ -116,15 +169,28 @@
             <div class="dashboard-grid">
                 <!-- BARIS 1: Customer (Full Width) -->
                 <div class="chart-card full-width">
-                    <div class="chart-title">Support Hours by Customer</div>
-                    <div class="chart-container">
+                    <div class="chart-header-row">
+                        <div class="chart-title">Support Hours by Customer</div>
+                        <span class="chart-subtitle-badge" id="customerTotalBadge">0 Customers</span>
+                    </div>
+                    <!-- Desktop Chart.js Canvas -->
+                    <div class="chart-container customer-chart-desktop">
                         <canvas id="customerChart"></canvas>
                     </div>
+                    <!-- Mobile Native Progress Leaderboard (Opsi 2) -->
+                    <div class="customer-leaderboard-mobile" id="customerLeaderboardMobile"></div>
                 </div>
 
                 <!-- BARIS 2: Daily Trend (Full Width) -->
                 <div class="chart-card full-width">
-                    <div class="chart-title" id="trendChartTitle">Daily Activity Log Trend</div>
+                    <div class="chart-header-row">
+                        <div class="chart-title" id="trendChartTitle">Daily Activity Log Trend</div>
+                        <div class="trend-range-toggle" id="trendRangeToggle">
+                            <button type="button" class="trend-toggle-btn" id="btnTrend7d" onclick="setTrendRangeMode('7d')">7D</button>
+                            <button type="button" class="trend-toggle-btn" id="btnTrend14d" onclick="setTrendRangeMode('14d')">14D</button>
+                            <button type="button" class="trend-toggle-btn active" id="btnTrendFull" onclick="setTrendRangeMode('full')">Full Month</button>
+                        </div>
+                    </div>
                     <div class="chart-container">
                         <canvas id="trendChart"></canvas>
                     </div>

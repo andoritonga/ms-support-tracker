@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <title>Sign In – XLSMART ICT Support Tracker</title>
+
+    <!-- PWA & Favicon Assets -->
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon.png">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#2434a4" id="metaThemeColor">
+
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        body.login-page {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 24px 16px;
+            background:
+                radial-gradient(circle at 15% 20%, rgba(255, 45, 143, 0.10) 0%, transparent 45%),
+                radial-gradient(circle at 85% 80%, rgba(36, 52, 164, 0.14) 0%, transparent 50%),
+                var(--bg);
+        }
+
+        .login-card {
+            width: 100%;
+            max-width: 420px;
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 24px;
+            padding: 36px 32px 30px;
+            box-shadow: var(--shadow-md);
+            position: relative;
+        }
+
+        .login-top-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 24px;
+        }
+
+        .login-logo {
+            height: 42px;
+            object-fit: contain;
+        }
+
+        .login-header {
+            margin-bottom: 24px;
+        }
+
+        .login-title {
+            font-size: 22px;
+            font-weight: 800;
+            color: var(--text);
+            letter-spacing: -0.02em;
+            margin: 0 0 6px 0;
+        }
+
+        .login-subtitle {
+            font-size: 13px;
+            color: var(--muted);
+            margin: 0;
+            font-weight: 500;
+        }
+
+        .login-field {
+            margin-bottom: 18px;
+        }
+
+        .login-field label {
+            display: block;
+            font-size: 12.5px;
+            font-weight: 700;
+            color: var(--text);
+            margin-bottom: 7px;
+        }
+
+        .login-input-wrap {
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+
+        .login-input-wrap input {
+            width: 100%;
+            padding: 12px 14px;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            background: var(--input-bg);
+            color: var(--text);
+            font-size: 14px;
+            font-weight: 500;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .login-input-wrap input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+        }
+
+        .btn-toggle-pw {
+            position: absolute;
+            right: 10px;
+            background: transparent;
+            border: none;
+            color: var(--muted);
+            cursor: pointer;
+            padding: 6px 8px;
+            font-size: 13px;
+            border-radius: 8px;
+        }
+
+        .btn-toggle-pw:hover {
+            color: var(--text);
+            background: rgba(148, 163, 184, 0.12);
+        }
+
+        .login-options {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin: 6px 0 22px 0;
+            font-size: 13px;
+        }
+
+        .remember-label {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            color: var(--text);
+            font-weight: 600;
+            user-select: none;
+        }
+
+        .remember-label input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            accent-color: var(--primary);
+            cursor: pointer;
+            margin: 0;
+        }
+
+        .remember-hint {
+            font-size: 11.5px;
+            color: var(--muted);
+            font-weight: 500;
+        }
+
+        .btn-login-submit {
+            width: 100%;
+            padding: 13px 20px;
+            border-radius: 12px;
+            border: none;
+            background: var(--gradient);
+            color: #ffffff;
+            font-weight: 800;
+            font-size: 14px;
+            letter-spacing: 0.01em;
+            cursor: pointer;
+            box-shadow: var(--btn-glow);
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn-login-submit:hover:not(:disabled) {
+            transform: translateY(-1px);
+            filter: brightness(1.05);
+        }
+
+        .btn-login-submit:disabled {
+            opacity: 0.65;
+            cursor: not-allowed;
+        }
+
+        .login-error-box {
+            display: none;
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.35);
+            color: #ef4444;
+            padding: 11px 14px;
+            border-radius: 12px;
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 18px;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .login-footer {
+            margin-top: 22px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border);
+            text-align: center;
+            font-size: 12px;
+            color: var(--muted);
+        }
+    </style>
+</head>
+
+<body class="login-page">
+    <div class="login-card">
+        <div class="login-top-bar">
+            <img id="loginLogo" class="login-logo" src="/static/logo-xlsmart.png" alt="XLSmart Logo" />
+            <button type="button" class="theme-toggle" onclick="toggleLoginTheme()" title="Switch Dark / Light Theme">
+                <span id="loginThemeIcon">🌙</span>
+                <span id="loginThemeText">Dark</span>
+            </button>
+        </div>
+
+        <div class="login-header">
+            <h1 class="login-title">MS Support Tracker</h1>
+            <p class="login-subtitle">Sign in to access Cloud Operations &amp; SLA Dashboard</p>
+        </div>
+
+        <div id="loginErrorBox" class="login-error-box" role="alert">
+            <span>⚠️</span>
+            <span id="loginErrorText">Invalid username or password.</span>
+        </div>
+
+        <form id="loginForm" onsubmit="handleLoginSubmit(event)">
+            <div class="login-field">
+                <label for="loginUsername">Username</label>
+                <div class="login-input-wrap">
+                    <input type="text" id="loginUsername" name="username" autocomplete="username" placeholder="Enter your username" required autofocus />
+                </div>
+            </div>
+
+            <div class="login-field">
+                <label for="loginPassword">Password</label>
+                <div class="login-input-wrap">
+                    <input type="password" id="loginPassword" name="password" autocomplete="current-password" placeholder="Enter your password" required style="padding-right: 44px;" />
+                    <button type="button" class="btn-toggle-pw" onclick="togglePasswordVisibility()" title="Show / Hide Password" aria-label="Toggle password visibility" id="btnTogglePw">👁️</button>
+                </div>
+            </div>
+
+            <div class="login-options">
+                <label class="remember-label">
+                    <input type="checkbox" id="loginRememberMe" checked />
+                    <span>Remember me</span>
+                </label>
+                <span class="remember-hint" id="rememberDurationHint">30-day session</span>
+            </div>
+
+            <button type="submit" class="btn-login-submit" id="btnLoginSubmit">
+                <span id="btnLoginText">Sign In</span>
+            </button>
+        </form>
+
+        <div class="login-footer">
+            Protected by HMAC-SHA256 HttpOnly Session Security
+        </div>
+    </div>
+
+    <script>
+        const LOGO_LIGHT = "/static/logo-xlsmart.png";
+        const LOGO_DARK = "/static/logo-xlsmart-dark.png";
+
+        function applySavedTheme() {
+            const saved = localStorage.getItem("ms_theme");
+            if (saved === "dark") {
+                document.body.setAttribute("data-theme", "dark");
+                document.getElementById("loginThemeIcon").innerText = "☀️";
+                document.getElementById("loginThemeText").innerText = "Light";
+                document.getElementById("loginLogo").src = LOGO_DARK;
+            }
+        }
+        applySavedTheme();
+
+        function toggleLoginTheme() {
+            const isDark = document.body.getAttribute("data-theme") === "dark";
+            const next = isDark ? "light" : "dark";
+            document.body.setAttribute("data-theme", next);
+            localStorage.setItem("ms_theme", next);
+            document.getElementById("loginThemeIcon").innerText = isDark ? "🌙" : "☀️";
+            document.getElementById("loginThemeText").innerText = isDark ? "Dark" : "Light";
+            document.getElementById("loginLogo").src = isDark ? LOGO_LIGHT : LOGO_DARK;
+        }
+
+        function togglePasswordVisibility() {
+            const inp = document.getElementById("loginPassword");
+            const btn = document.getElementById("btnTogglePw");
+            if (inp.type === "password") {
+                inp.type = "text";
+                btn.innerText = "🙈";
+            } else {
+                inp.type = "password";
+                btn.innerText = "👁️";
+            }
+        }
+
+        document.getElementById("loginRememberMe").addEventListener("change", function () {
+            document.getElementById("rememberDurationHint").innerText = this.checked ? "30-day session" : "24-hour session";
+        });
+
+        // If already authenticated or auth is disabled, redirect to /
+        fetch("/api/auth/me", { credentials: "same-origin" })
+            .then(r => r.ok ? r.json() : null)
+            .then(data => {
+                if (data && (data.authenticated || data.authEnabled === false)) {
+                    window.location.replace("/");
+                }
+            })
+            .catch(() => {});
+
+        async function handleLoginSubmit(e) {
+            e.preventDefault();
+            const errBox = document.getElementById("loginErrorBox");
+            const errText = document.getElementById("loginErrorText");
+            const btn = document.getElementById("btnLoginSubmit");
+            const btnText = document.getElementById("btnLoginText");
+
+            errBox.style.display = "none";
+            btn.disabled = true;
+            btnText.innerText = "Signing in...";
+
+            const username = document.getElementById("loginUsername").value.trim();
+            const password = document.getElementById("loginPassword").value;
+            const rememberMe = document.getElementById("loginRememberMe").checked;
+
+            try {
+                const res = await fetch("/api/auth/login", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    credentials: "same-origin",
+                    body: JSON.stringify({ username, password, rememberMe })
+                });
+                const data = await res.json().catch(() => ({}));
+                if (res.ok && data.status === "ok") {
+                    const params = new URLSearchParams(window.location.search);
+                    const nextUrl = params.get("next");
+                    const safeNext = (nextUrl && nextUrl.startsWith("/") && !nextUrl.startsWith("//")) ? nextUrl : "/";
+                    window.location.replace(safeNext);
+                    return;
+                }
+                errText.innerText = data.detail || data.error || "Invalid username or password.";
+                errBox.style.display = "flex";
+            } catch (err) {
+                errText.innerText = "Network error while signing in. Please try again.";
+                errBox.style.display = "flex";
+            } finally {
+                btn.disabled = false;
+                btnText.innerText = "Sign In";
+            }
+        }
+    </script>
+</body>
+
+</html>

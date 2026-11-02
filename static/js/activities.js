@@ -196,7 +196,7 @@
         function submitForm() {
             let remarksVal = document.getElementById('remarks').value;
             const custVal = document.getElementById('customer').value || '';
-            const isContract = typeof isContractCustomer === 'function' ? isContractCustomer(custVal) : custVal.toUpperCase().includes('MSIG');
+            const isContract = typeof isContractCustomer === 'function' ? isContractCustomer(custVal) : (custVal.toUpperCase().includes('MSIG') || custVal.toUpperCase().includes('ASJ') || custVal.toUpperCase().includes('SIMAS JIWA'));
             const ticketDeductionVal = isContract && document.getElementById('ticketDeduction')
                 ? parseFloat(document.getElementById('ticketDeduction').value || 0)
                 : 0.0;
@@ -291,7 +291,7 @@
                     reportLoading(false);
                     const tbody = document.getElementById('reportTbody');
                     if (tbody && (!allReportLogs || allReportLogs.length === 0)) {
-                        tbody.innerHTML = `<tr><td colspan="${getVisibleColumnCount()}" style="text-align: center; color: #dc2626; padding: 24px;">⚠️ Gagal memuat data: ${err.message}</td></tr>`;
+                        tbody.innerHTML = `<tr><td colspan="${getVisibleColumnCount()}" style="text-align: center; color: #dc2626; padding: 24px;">⚠️ Gagal memuat data: ${escapeHtml(err.message)}</td></tr>`;
                     }
                 });
         }
@@ -530,9 +530,10 @@
                 const detailRowId = `detail-${item.rowId}`;
                 const formattedDate = formatDateFormatted(item.date);
                 const msigCalc = typeof calculateContractTicketBurn === 'function' ? calculateContractTicketBurn(item) : calculateMsigTicketBurn(item);
-                const isContract = msigCalc.isContract || msigCalc.isMsig || (item.customer && (item.customer.toUpperCase().includes('MSIG') || item.customer.toUpperCase().includes('ASJ')));
+                const isContract = msigCalc.isContract || msigCalc.isMsig || (typeof isContractCustomer === 'function' ? isContractCustomer(item.customer) : (item.customer && (item.customer.toUpperCase().includes('MSIG') || item.customer.toUpperCase().includes('ASJ') || item.customer.toUpperCase().includes('SIMAS JIWA'))));
                 const isMsig = isContract; // for template backward-compatibility
-                const contractClient = msigCalc.client || (item.customer && item.customer.toUpperCase().includes('ASJ') ? 'ASJ' : 'MSIG');
+                const contractClient = msigCalc.client || (typeof getContractClientName === 'function' ? getContractClientName(item.customer) : (item.customer && (item.customer.toUpperCase().includes('ASJ') || item.customer.toUpperCase().includes('SIMAS JIWA')) ? 'ASJ' : 'MSIG'));
+                const contractClientLabel = typeof getContractDisplayName === 'function' ? getContractDisplayName(contractClient) : (contractClient === 'ASJ' ? 'Asuransi Simas Jiwa' : 'MSIG Life');
                 const msigBadge = isContract ? `<div style="margin-top: 4px;">${msigCalc.badgeHtml}</div>` : '';
 
                 // 1. Desktop Table Row
@@ -548,17 +549,17 @@
           <td class="td-center col-expand"><span class="expand-icon" style="font-size: 10px;">▶</span></td>
           <td class="td-center col-customer">
             ${item.customer ? `
-              <span class="customer-dossier-trigger" onclick="openCustomerDossier('${escapeJsString(item.customer)}'); event.stopPropagation();" title="Buka Dossier & Riwayat ${item.customer}">
-                <strong>${item.customer}</strong>
+              <span class="customer-dossier-trigger" onclick="openCustomerDossier('${escapeJsString(item.customer)}'); event.stopPropagation();" title="Buka Dossier & Riwayat ${escapeHtml(item.customer)}">
+                <strong>${escapeHtml(item.customer)}</strong>
                 <span class="dossier-mini-icon">🗂️</span>
               </span>
             ` : '-'}
           </td>
-          <td class="td-center col-date" style="white-space: nowrap;">${formattedDate}</td>
-          <td class="td-center col-raisedBy">${item.raisedBy || '-'}</td>
-          <td class="td-center col-services">${item.services || '-'}</td>
+          <td class="td-center col-date" style="white-space: nowrap;">${escapeHtml(formattedDate)}</td>
+          <td class="td-center col-raisedBy">${escapeHtml(item.raisedBy || '-')}</td>
+          <td class="td-center col-services">${escapeHtml(item.services || '-')}</td>
           <td class="td-center col-category">
-            <div>${item.category || '-'}</div>
+            <div>${escapeHtml(item.category || '-')}</div>
             ${isMsig ? `
               <select class="ticket-select burn-${(item.ticketDeduction || 0) == 0.5 ? '05' : ((item.ticketDeduction || 0) >= 1.0 ? '10' : '00')}"
                       title="Ubah Kuota Tiket Terpotong"
@@ -570,8 +571,8 @@
               </select>
             ` : ''}
           </td>
-          <td class="td-left col-taskDescription">${item.taskDescription || '-'}</td>
-          <td class="td-center col-duration"><strong>${item.duration || '00:00'}</strong></td>
+          <td class="td-left col-taskDescription">${escapeHtml(item.taskDescription || '-')}</td>
+          <td class="td-center col-duration"><strong>${escapeHtml(item.duration || '00:00')}</strong></td>
           <td class="td-center col-status">
             <select class="status-select ${statusClass}" onchange="changeStatus(${item.rowId}, this.value, this)">
               <option value="In Progress" ${item.status === 'In Progress' ? 'selected' : ''}>In Progress</option>
@@ -593,12 +594,12 @@
                 trDetail.innerHTML = `
           <td colspan="${getVisibleColumnCount()}">
             <div class="detail-box">
-              <div class="detail-item"><strong>Project / GCP ID:</strong> ${item.project || 'N/A'}</div>
-              <div class="detail-item"><strong>Clock In / Out:</strong> ${item.clockIn || '-'} &nbsp;➔&nbsp; ${item.clockOut || '-'}</div>
-              <div class="detail-item"><strong>Root Cause:</strong> ${item.rootCause || 'N/A'}</div>
-              <div class="detail-item"><strong>Solution:</strong> ${item.solution || 'N/A'}</div>
-              <div class="detail-item" style="grid-column: 1 / -1;"><strong>Remarks:</strong> ${item.remarks || 'None'}</div>
-              ${isContract ? `<div class="detail-item" style="grid-column: 1 / -1; background: rgba(59, 130, 246, 0.08); border-left: 3px solid #3b82f6; padding: 6px 12px; border-radius: 6px;"><strong>🎫 ${contractClient} Contract Ticket Deduction:</strong> <span style="font-weight: 800; color: #1e40af;">${msigCalc.ticketBurn.toFixed(1)} Ticket</span> &nbsp;—&nbsp; <span style="color: var(--muted);">${msigCalc.explanation}</span></div>` : ''}
+              <div class="detail-item"><strong>Project / GCP ID:</strong> ${escapeHtml(item.project || 'N/A')}</div>
+              <div class="detail-item"><strong>Clock In / Out:</strong> ${escapeHtml(item.clockIn || '-')} &nbsp;➔&nbsp; ${escapeHtml(item.clockOut || '-')}</div>
+              <div class="detail-item"><strong>Root Cause:</strong> ${escapeHtml(item.rootCause || 'N/A')}</div>
+              <div class="detail-item"><strong>Solution:</strong> ${escapeHtml(item.solution || 'N/A')}</div>
+              <div class="detail-item" style="grid-column: 1 / -1;"><strong>Remarks:</strong> ${escapeHtml(item.remarks || 'None')}</div>
+              ${isContract ? `<div class="detail-item" style="grid-column: 1 / -1; background: rgba(59, 130, 246, 0.08); border-left: 3px solid #3b82f6; padding: 6px 12px; border-radius: 6px;"><strong>🎫 ${escapeHtml(contractClientLabel)} Contract Ticket Deduction:</strong> <span style="font-weight: 800; color: #1e40af;">${msigCalc.ticketBurn.toFixed(1)} Ticket</span> &nbsp;—&nbsp; <span style="color: var(--muted);">${escapeHtml(msigCalc.explanation)}</span></div>` : ''}
             </div>
           </td>
         `;
@@ -618,10 +619,10 @@
                                 <span class="mcard-customer-badge" onclick="openCustomerDossier('${escapeJsString(item.customer)}'); event.stopPropagation();">
                                     <strong>${escapeHtml(item.customer || '-')}</strong> <span class="dossier-mini-icon">🗂️</span>
                                 </span>
-                                <span class="mcard-date-badge">${formattedDate}</span>
+                                <span class="mcard-date-badge">${escapeHtml(formattedDate)}</span>
                             </div>
                             <div class="mcard-top-right">
-                                <span class="mcard-duration-badge">⏱️ ${item.duration || '00:00'}</span>
+                                <span class="mcard-duration-badge">⏱️ ${escapeHtml(item.duration || '00:00')}</span>
                                 <select class="mcard-status-select ${statusClass}" onchange="changeStatus(${item.rowId}, this.value, this)">
                                     <option value="In Progress" ${item.status === 'In Progress' ? 'selected' : ''}>In Progress</option>
                                     <option value="Closed" ${item.status === 'Closed' ? 'selected' : ''}>Closed</option>
@@ -652,11 +653,11 @@
                         <!-- Expandable Details Drawer -->
                         <div class="mcard-details-panel" id="mcardDetail-${item.rowId}" style="display: none;">
                             <div class="mcard-detail-item"><strong>📌 Project / GCP:</strong> ${escapeHtml(item.project || 'N/A')}</div>
-                            <div class="mcard-detail-item"><strong>⏰ Clock In/Out:</strong> ${item.clockIn || '-'} ➔ ${item.clockOut || '-'}</div>
+                            <div class="mcard-detail-item"><strong>⏰ Clock In/Out:</strong> ${escapeHtml(item.clockIn || '-')} ➔ ${escapeHtml(item.clockOut || '-')}</div>
                             ${item.rootCause ? `<div class="mcard-detail-item"><strong>🔍 Root Cause:</strong> ${escapeHtml(item.rootCause)}</div>` : ''}
                             ${item.solution ? `<div class="mcard-detail-item"><strong>💡 Solution:</strong> ${escapeHtml(item.solution)}</div>` : ''}
                             ${item.remarks ? `<div class="mcard-detail-item"><strong>📝 Remarks:</strong> ${escapeHtml(item.remarks)}</div>` : ''}
-                            ${isContract ? `<div class="mcard-detail-item msig-note"><strong>🎫 Kuota ${contractClient}:</strong> ${msigCalc.ticketBurn.toFixed(1)} Ticket — ${msigCalc.explanation}</div>` : ''}
+                            ${isContract ? `<div class="mcard-detail-item msig-note"><strong>🎫 Kuota ${escapeHtml(contractClientLabel)}:</strong> ${msigCalc.ticketBurn.toFixed(1)} Ticket — ${escapeHtml(msigCalc.explanation)}</div>` : ''}
                         </div>
 
                         <div class="mcard-footer">
@@ -879,7 +880,7 @@
         function saveEditModal() {
             let remarksVal = document.getElementById('editRemarks').value;
             const editCustVal = document.getElementById('editCustomer').value || '';
-            const isContractEdit = typeof isContractCustomer === 'function' ? isContractCustomer(editCustVal) : editCustVal.toUpperCase().includes('MSIG');
+            const isContractEdit = typeof isContractCustomer === 'function' ? isContractCustomer(editCustVal) : (editCustVal.toUpperCase().includes('MSIG') || editCustVal.toUpperCase().includes('ASJ') || editCustVal.toUpperCase().includes('SIMAS JIWA'));
             const editTicketDeductionVal = isContractEdit && document.getElementById('editTicketDeduction')
                 ? parseFloat(document.getElementById('editTicketDeduction').value || 0)
                 : 0.0;
@@ -935,4 +936,14 @@
                     });
             }
         }
+
+        // Ensure application initializes once all activity & analytics handlers are defined
+        if (typeof initApp === 'function') {
+            if (document.readyState === 'loading') {
+                window.addEventListener('DOMContentLoaded', initApp);
+            } else {
+                initApp();
+            }
+        }
+
 

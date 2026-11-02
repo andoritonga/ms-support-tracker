@@ -9,7 +9,7 @@
 
 A high-performance activity logging, time tracking, and SLA analytics dashboard built for Managed Services (MS), Cloud Operations, and DevOps engineers.
 
-Combines **blazing-fast local SQLite / Cloudflare D1 storage (<20ms response time)** with **background two-way synchronization to Google Sheets**, complete with printable executive SLA reports, client dossiers, Knowledge Base auto-suggest, and Google Gemini AI insights.
+Combines **blazing-fast local SQLite / Cloudflare D1 storage (<20ms response time)** with **background two-way synchronization to Google Sheets**, complete with printable executive SLA & weekly customer reports, client dossiers, Knowledge Base auto-suggest, and Google Gemini AI insights.
 
 ---
 
@@ -40,17 +40,24 @@ Combines **blazing-fast local SQLite / Cloudflare D1 storage (<20ms response tim
   - Track contract ticket deductions (`0 Tkt` for inquiry, `0.5 Tkt` for changes ≤ 4h, `1.0 Tkt` for incidents/changes > 4h).
   - Real-time visual progress bar showing deducted vs. remaining contract quota.
 
-- **📊 Visual Dashboard & Executive Analytics**:
-  - Interactive Chart.js visualizations for client workload distribution, category split, service usage, and **Monthly Daily Activity Trend**.
-  - Filterable by custom date ranges and presets (*Today*, *Pending*, *This Month*).
+- **📊 Visual Dashboard, Executive Analytics & Mobile PWA Optimization**:
+  - Interactive Chart.js visualizations for client workload distribution, category split, service usage, and **Daily Activity Log Trend**.
+  - **Mobile / PWA Native Analytics**:
+    - **Collapsible Actions & Export Drawer**: Streamlined header toolbar with primary `✨ AI Summary` and `⚡ Actions & Export ▾` dropdown menu plus structured 2-column Date Range filter card.
+    - **Mobile Customer Leaderboard**: Automatically converts the desktop vertical bar chart into a clean, ranked horizontal progress bar leaderboard (`🥇`, `🥈`, `🥉`) on mobile screens (`<= 768px`), clickable to open the Customer Dossier.
+    - **Trend Window Toggle (`7D` / `14D` / `Full`)**: Switch between 7-day, 14-day, and full-month windows on the Daily Activity Trend chart (defaulting to `7D` on mobile for zero label crowding).
 
-- **📑 Printable Client SLA Reports & Excel Export**:
-  - Generate clean, professional, print-ready SLA summary reports formatted for client deliverables or PDF export.
+- **📑 Printable Client SLA Reports, Weekly Customer Health Reports & Excel Export**:
+  - **Executive Summary & Client Monthly SLA Report**: Print-ready SLA summary deliverables formatted for PDF export.
+  - **Weekly Customer Performance & Issue Health Report**: Dedicated executive report highlighting customer health status (`🟢 Healthy`, `🟡 Attention`, `🔴 Critical`), active blockers, recurring root causes, and multi-customer checklist filtering (`Select All`, `Clear`, `Active Only`).
   - 1-click Excel (`.xlsx`) export for filtered views.
 
 - **✨ Google Gemini AI Integration**:
   - **AI Executive Summary**: Analyzes activity trends and highlights operational accomplishments.
   - **AI Note Polish**: Refines technical Task Descriptions, Root Causes, and Solutions into client-ready professional summaries.
+
+- **🔐 Built-in Web Login & Signed Session Security**:
+  - Dedicated Web Login UI (`/login`) with HMAC-SHA256 signed `HttpOnly` session cookies (30-day "Remember me" or 24-hour session) and HTTP Basic Auth fallback—eliminating slow external OTP prompts while supporting multi-user accounts (`AUTH_USERS`).
 
 - **⚡ Dual Deployment & Hybrid Storage Architecture**:
   - **Self-Hosted (Docker + FastAPI + SQLite)** or **100% Serverless (Cloudflare Workers + Cloudflare D1)**.
@@ -119,9 +126,12 @@ HOST_PORT=8081
 # In-Memory Cache TTL (seconds)
 CACHE_TTL_SECONDS=300
 
-# Optional Basic Authentication (leave blank to disable)
+# Optional Authentication (Web Login UI + Signed HttpOnly Session Cookie)
+AUTH_REQUIRED=false
 AUTH_USERNAME=
 AUTH_PASSWORD=
+AUTH_USERS=
+AUTH_SECRET=
 
 # Optional Google Gemini API Key for AI Summaries
 GEMINI_API_KEY=
@@ -157,7 +167,7 @@ Create the remote D1 database:
 ```bash
 npx wrangler d1 create ms-tracker
 ```
-Copy the `database_id` from the output and paste it into [`wrangler.jsonc`](wrangler.jsonc) under `d1_databases[0].database_id`, along with your `SPREADSHEET_LOGS_ID` and `SPREADSHEET_CONFIG_ID` in `vars`.
+Copy the `database_id` from the output and paste it into [`wrangler.jsonc`](wrangler.jsonc) under `d1_databases[0].database_id`.
 
 ### 3. Initialize the D1 Schema
 Execute the schema migration on your remote database (Note: the worker also auto-ensures schema and bootstraps initial sync on first request):
@@ -166,18 +176,23 @@ npm run db:init:remote
 # Or directly: npx wrangler d1 execute ms-tracker --remote --file=./schema.sql
 ```
 
-### 4. Configure Cloudflare Secrets
-Set your Google Cloud Service Account and optional Gemini AI / Basic Auth credentials as Cloudflare encrypted secrets:
+### 4. Configure Cloudflare Encrypted Secrets
+Set your Google Cloud Service Account, Spreadsheet IDs, and optional Gemini AI / Auth credentials as Cloudflare encrypted secrets (kept across deploys via `--keep-vars`):
 ```bash
 # Upload your Google Service Account JSON:
 npx wrangler secret put SERVICE_ACCOUNT_JSON < service-account.json
 
+# Set your Google Spreadsheet IDs:
+npx wrangler secret put SPREADSHEET_LOGS_ID
+npx wrangler secret put SPREADSHEET_CONFIG_ID
+
 # (Optional) Set your Gemini API Key:
 npx wrangler secret put GEMINI_API_KEY
 
-# (Optional) HTTP Basic Auth credentials:
+# (Optional) Web Login & Auth credentials:
 npx wrangler secret put AUTH_USERNAME
 npx wrangler secret put AUTH_PASSWORD
+npx wrangler secret put AUTH_SECRET
 ```
 
 ### 5. Build and Deploy
@@ -199,7 +214,7 @@ If using Google Sheets as a synchronized cloud datastore:
    - **Activity Logs Sheet (`Activity_Log`)**: Contains columns for `No`, `Date`, `Customer`, `Raised By`, `Services`, `Category`, `Project`, `Task Description`, `Root Cause`, `Solution`, `Clock In`, `Clock Out`, `Duration`, `Status`, `Remarks`, `Ticket Deduction`.
    - **Config Sheet**: Contains tabs for `Customer_Config` and `Customer_Resources` (customer-specific engineers/reporters and GCP Project IDs).
 4. Share both spreadsheets with the Service Account email with **Editor** permissions.
-5. Set `SPREADSHEET_LOGS_ID` and `SPREADSHEET_CONFIG_ID` in `.env` (for Docker) or `wrangler.jsonc` (for Cloudflare Workers).
+5. Set `SPREADSHEET_LOGS_ID` and `SPREADSHEET_CONFIG_ID` in `.env` (for Docker) or via `npx wrangler secret put` (for Cloudflare Workers).
 
 ---
 
@@ -226,6 +241,7 @@ cloudflared tunnel run --url http://localhost:8081 ms-tracker
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
 | `GET` | `/` | Web Application UI |
+| `GET` | `/login` | Web Login Page (`POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/status`) |
 | `GET` | `/healthz` | Health check, database storage status, and sync metadata |
 | `GET` | `/api/sync-status` | Current Google Sheets synchronization status and pending queue count |
 | `POST` | `/api/trigger-sync` | Manually trigger a full two-way synchronization cycle |

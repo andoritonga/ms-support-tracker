@@ -1,32 +1,41 @@
-    <!-- MODAL POP-UP 4: CLIENT-FACING SLA & MONTHLY REPORT -->
+    <!-- MODAL POP-UP 4: WEEKLY CUSTOMER PERFORMANCE & ISSUE REPORT -->
     <div id="clientReportModal" class="modal-overlay">
-        <div class="modal-box" style="max-width: 680px;">
+        <div class="modal-box" style="max-width: 700px;">
             <div class="modal-drag-handle"></div>
             <div class="modal-header">
                 <div>
                     <div class="modal-title" style="display: flex; align-items: center; gap: 8px;">
                         <span>📑</span>
-                        <span>Client SLA & Monthly Activity Report</span>
+                        <span>Weekly Customer Performance & Issue Report</span>
                     </div>
-                    <div style="font-size: 11px; color: var(--muted); margin-top: 4px;">
-                        Generate an official, branded monthly support delivery and SLA compliance report for clients
+                    <div style="font-size: 11.5px; color: var(--muted); margin-top: 4px;">
+                        Evaluate customer operational performance based on Issue occurrence (0 Issues = 100% Perfect Health)
                     </div>
                 </div>
                 <button class="btn-secondary" style="padding: 4px 10px;" onclick="closeClientReportModal()">✕</button>
             </div>
 
+            <!-- QUICK PERIOD PRESETS -->
+            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; padding: 10px 12px; background: rgba(36, 52, 164, 0.05); border: 1px solid var(--border); border-radius: 10px;">
+                <span style="font-size: 11.5px; font-weight: 700; color: var(--muted);">Quick Period:</span>
+                <button type="button" class="preset-btn active" id="wkPresetThisWeek" onclick="applyWeeklyReportPreset('thisWeek', this)">📅 This Week (Mon–Sun)</button>
+                <button type="button" class="preset-btn" id="wkPresetLastWeek" onclick="applyWeeklyReportPreset('lastWeek', this)">⏮️ Last Week</button>
+                <button type="button" class="preset-btn" id="wkPresetLast7" onclick="applyWeeklyReportPreset('last7Days', this)">🗓️ Last 7 Days</button>
+                <button type="button" class="preset-btn" id="wkPresetThisMonth" onclick="applyWeeklyReportPreset('thisMonth', this)">📆 This Month</button>
+            </div>
+
             <div class="grid">
                 <div>
-                    <label>Client / Customer</label>
-                    <select id="slaReportCustomer"></select>
+                    <label>Start Date</label>
+                    <input type="date" id="slaReportStartDate" onchange="clearWeeklyPresetActive(); refreshSlaCustomerCounts();" />
                 </div>
                 <div>
-                    <label>Report Month & Year</label>
-                    <input type="month" id="slaReportMonth" />
+                    <label>End Date</label>
+                    <input type="date" id="slaReportEndDate" onchange="clearWeeklyPresetActive(); refreshSlaCustomerCounts();" />
                 </div>
-                <div>
+                <div class="full">
                     <label>Cloud Service Scope</label>
-                    <select id="slaReportService">
+                    <select id="slaReportService" onchange="refreshSlaCustomerCounts()">
                         <option value="All">All Services (Google Cloud, Alibaba, etc.)</option>
                         <option value="Google Cloud">Google Cloud</option>
                         <option value="Alibaba Cloud">Alibaba Cloud</option>
@@ -34,9 +43,21 @@
                         <option value="VOD">VOD</option>
                     </select>
                 </div>
-                <div>
-                    <label>Target SLA Commitment</label>
-                    <input type="text" id="slaReportTarget" value="99.5%" placeholder="e.g. 99.5%" />
+                <div class="full">
+                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 6px;">
+                        <label style="margin: 0; display: flex; align-items: center; gap: 6px;">
+                            <span>Pilih Customer untuk Di-include</span>
+                            <span id="slaCustomerSelectedBadge" style="font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 99px; background: rgba(36, 52, 164, 0.12); color: var(--primary);">0 / 0 dipilih</span>
+                        </label>
+                        <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                            <button type="button" class="preset-btn" style="padding: 3px 8px; font-size: 11px;" onclick="toggleAllSlaCustomers(true)">✓ Pilih Semua</button>
+                            <button type="button" class="preset-btn" style="padding: 3px 8px; font-size: 11px;" onclick="selectActiveOnlySlaCustomers()" title="Pilih hanya customer yang memiliki aktivitas/issue pada periode ini">⚡ Hanya yang Aktif</button>
+                            <button type="button" class="preset-btn" style="padding: 3px 8px; font-size: 11px;" onclick="toggleAllSlaCustomers(false)">✕ Hapus Pilihan</button>
+                        </div>
+                    </div>
+                    <input type="text" id="slaCustomerSearch" placeholder="🔍 Cari nama customer..." oninput="filterSlaCustomerChecklist(this.value)" style="margin-bottom: 8px; padding: 7px 10px; font-size: 12px;" />
+                    <div id="slaReportCustomerList" style="max-height: 175px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; padding: 8px; background: var(--bg); display: grid; grid-template-columns: repeat(auto-fill, minmax(195px, 1fr)); gap: 6px;">
+                    </div>
                 </div>
                 <div class="full">
                     <label>Prepared By (Lead Engineer / Team)</label>
@@ -44,18 +65,24 @@
                 </div>
                 <div class="full">
                     <label>Document Title</label>
-                    <input type="text" id="slaReportTitle" value="Monthly Managed Services Support & SLA Delivery Report" />
+                    <input type="text" id="slaReportTitle" value="Weekly Customer Performance & Issue Health Report" />
                 </div>
                 <div class="full">
-                    <label>Executive Highlights & Scope (Optional)</label>
-                    <textarea id="slaReportNotes" rows="2" placeholder="e.g. All routine infrastructure maintenance, cloud backups, and proactive monitoring activities were performed with zero unscheduled downtime."></textarea>
+                    <label>Executive Highlights & Summary Notes (Optional)</label>
+                    <textarea id="slaReportNotes" rows="2" placeholder="e.g. Customer environments operated stably throughout the week. All reported issues were mitigated promptly with root causes documented below."></textarea>
+                </div>
+                <div class="full" style="margin-top: 2px;">
+                    <label style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 600; font-size: 12.5px; color: var(--text);">
+                        <input type="checkbox" id="slaReportIncludeSupport" style="width: 16px; height: 16px; cursor: pointer;" />
+                        <span>Also include Routine Support & Non-Issue Activities table in appendix</span>
+                    </label>
                 </div>
             </div>
 
             <div class="actions" style="margin-top: 20px; justify-content: space-between;">
                 <button type="button" class="btn-secondary" onclick="closeClientReportModal()">Cancel</button>
                 <button type="button" class="btn-client-report" onclick="generateClientSlaReport()">
-                    <span>🖨️</span> Generate & Print SLA PDF
+                    <span>🖨️</span> Generate & Print Weekly Report
                 </button>
             </div>
         </div>

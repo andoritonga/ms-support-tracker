@@ -40,6 +40,14 @@ function cleanAndBuild() {
   fs.writeFileSync(path.join(PUBLIC_DIR, 'index.html'), indexHtml, 'utf-8');
   console.log('✅ Generated public/index.html');
 
+  // 2b. Copy login.html if present
+  const loginPath = path.join(TEMPLATES_DIR, 'login.html');
+  if (fs.existsSync(loginPath)) {
+    const loginHtml = fs.readFileSync(loginPath, 'utf-8');
+    fs.writeFileSync(path.join(PUBLIC_DIR, 'login.html'), loginHtml, 'utf-8');
+    console.log('✅ Generated public/login.html');
+  }
+
   // 3. Copy static folder
   const publicStaticDir = path.join(PUBLIC_DIR, 'static');
   if (fs.existsSync(STATIC_DIR)) {

@@ -33,6 +33,8 @@ CREATE INDEX IF NOT EXISTS idx_activities_sheet_row ON activities(sheet_row);
 CREATE TABLE IF NOT EXISTS config_customers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT UNIQUE NOT NULL,
+    contract_code TEXT DEFAULT '',
+    contract_quota REAL DEFAULT 0.0,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
